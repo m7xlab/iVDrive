@@ -375,7 +375,7 @@ class DataCollector:
                 charging = await _safe(api.get_charging(vin), "charging", user_vehicle_id)
                 is_charging = (
                     charging and charging.status
-                    and charging.status.state in ("CHARGING", "CONNECT_CABLE", "READY_FOR_CHARGING")
+                    and charging.status.state == "CHARGING"
                 )
 
                 # If car is online but parked, not charging → check AC before deciding
