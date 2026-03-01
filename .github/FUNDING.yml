@@ -2,13 +2,15 @@
 # These appear in the "Sponsor" button on the GitHub repo.
 # Replace the placeholder(s) below with your actual links.
 
-# GitHub Sponsors (optional): sign up at https://github.com/sponsors then uncomment
-github: [m7xlab]
+# GitHub Sponsors: use your username ONLY if you're enrolled at https://github.com/sponsors
+# Remove or comment out until approved, or you'll see "not enrolled" errors.
+# github: [m7xlab]
 
-# Ko-fi (optional): https://ko-fi.com — use your username
+# Ko-fi: https://ko-fi.com — use your username
 ko_fi: m7xlaboratory
 
-# Custom URLs: PayPal, Buy Me a Coffee, etc. Replace with your page(s).
-#custom: ['https://www.paypal.me/gkristopaitis']
-# You can add more: ['url1', 'https://www.buymeacoffee.com/yourpage']
-buy_me_a_coffee: ['https://buymeacoffee.com/m7xlab']
+# Buy Me a Coffee: use your username only (not a URL or array)
+buy_me_a_coffee: m7xlab
+
+# Custom URLs: PayPal, etc. (up to 4). Use for anything not listed above.
+# custom: ['https://www.paypal.me/yourpage']
