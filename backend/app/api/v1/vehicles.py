@@ -192,42 +192,38 @@ async def create_vehicle(
     await db.flush()
 
     auth = SkodaAuthClient()
-    connector_status = "pending"
-    access_encrypted = None
-    refresh_encrypted = None
-    token_expires_at = None
-
     try:
         tokens = await auth.login(body.skoda_username, body.skoda_password)
-        access_token = tokens.get("accessToken") or tokens.get("access_token", "")
-        refresh_token = tokens.get("refreshToken") or tokens.get("refresh_token", "")
-        access_encrypted = encrypt_field(access_token)
-        refresh_encrypted = encrypt_field(refresh_token)
-        expires_in = tokens.get("expiresIn") or tokens.get("expires_in", 3600)
-        token_expires_at = datetime.now(UTC) + timedelta(seconds=int(expires_in))
-        connector_status = "active"
-        logger.info("Skoda auth succeeded for vehicle %s", vehicle.id)
-    except Exception:
-        logger.warning("Skoda auth failed for vehicle %s, will retry later", vehicle.id, exc_info=True)
-        connector_status = "auth_failed"
+    except Exception as e:
+        logger.warning("Skoda auth failed, rolling back vehicle creation", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
     finally:
         await auth.close()
+
+    access_token = tokens.get("accessToken") or tokens.get("access_token", "")
+    refresh_token = tokens.get("refreshToken") or tokens.get("refresh_token", "")
+    expires_in = tokens.get("expiresIn") or tokens.get("expires_in", 3600)
+    token_expires_at = datetime.now(UTC) + timedelta(seconds=int(expires_in))
+    logger.info("Skoda auth succeeded for vehicle %s", vehicle.id)
 
     cs = ConnectorSession(
         user_vehicle_id=vehicle.id,
         connector_type="skoda",
-        status=connector_status,
-        access_token_encrypted=access_encrypted,
-        refresh_token_encrypted=refresh_encrypted,
+        status="active",
+        access_token_encrypted=encrypt_field(access_token),
+        refresh_token_encrypted=encrypt_field(refresh_token),
         token_expires_at=token_expires_at,
     )
     db.add(cs)
     await db.commit()
 
-    if connector_status == "active":
-        await publish_vehicle_linked(
-            str(vehicle.id), vehicle.collection_interval_seconds
-        )
+    # Attach session to vehicle to avoid lazy-load MissingGreenlet crash
+    vehicle.connector_session = cs
+
+    await publish_vehicle_linked(
+        str(vehicle.id), vehicle.collection_interval_seconds
+    )
 
     return _vehicle_to_response(vehicle)
 
