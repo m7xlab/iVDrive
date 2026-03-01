@@ -709,13 +709,18 @@ class DataCollector:
                 # This ensures we don't block the collector loop while crunching numbers.
                 task = asyncio.create_task(process_completed_trips_and_charges(user_vehicle_id))
                 self._background_tasks.add(task)
-                task.add_done_callback(self._background_tasks.discard)
+                task.add_done_callback(self._handle_task_result)
 
             except Exception:
                 logger.exception("Collection failed for vehicle %s", user_vehicle_id)
                 await session.rollback()
             finally:
                 await api.close()
+
+    def _handle_task_result(self, task: asyncio.Task) -> None:
+        self._background_tasks.discard(task)
+        if not task.cancelled() and task.exception():
+            logger.error("Background task failed with exception: %s", task.exception(), exc_info=task.exception())
 
     def register_vehicle(self, user_vehicle_id: UUID, interval: int) -> None:
         job_id = f"collect_{user_vehicle_id}"
