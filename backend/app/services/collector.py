@@ -58,6 +58,7 @@ def _extract_render_url(data: dict, preferred_view: str) -> str | None:
 class DataCollector:
     def __init__(self) -> None:
         self._scheduler = AsyncIOScheduler()
+        self._background_tasks: set = set()
 
     async def start(self) -> None:
         registered = 0
@@ -706,7 +707,9 @@ class DataCollector:
                 
                 # Asynchronously trigger analytics and trip/charging calculations in the background
                 # This ensures we don't block the collector loop while crunching numbers.
-                asyncio.create_task(process_completed_trips_and_charges(user_vehicle_id))
+                task = asyncio.create_task(process_completed_trips_and_charges(user_vehicle_id))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
 
             except Exception:
                 logger.exception("Collection failed for vehicle %s", user_vehicle_id)

@@ -435,8 +435,10 @@ def _merge_bands(
     """Merge consecutive rows into single bands when gap between end of one and start of next <= gap_max."""
     for r in rows:
         t_from = getattr(r, from_attr)
+        if not t_from:
+            continue
         t_to = getattr(r, to_attr) or t_from
-        if bands and bands[-1].state == state and (t_from - bands[-1].to_date) <= gap_max:
+        if bands and bands[-1].state == state and bands[-1].to_date and (t_from - bands[-1].to_date) <= gap_max:
             bands[-1] = StateBandItem(from_date=bands[-1].from_date, to_date=max(bands[-1].to_date, t_to), state=state)
         else:
             bands.append(StateBandItem(from_date=t_from, to_date=t_to, state=state))
