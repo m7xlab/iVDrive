@@ -342,6 +342,7 @@ class DataCollector:
                 temp_c = None
                 weather_code = None
                 elevation_m = None
+                did_full_fetch = False
 
                 # Determine how long since the last full data fetch
                 last_full_fetch = cs.last_fetch_at
@@ -415,6 +416,7 @@ class DataCollector:
                     # but skip driving_range, position, status, maintenance, warning_lights
                 else:
                     # Car is ACTIVE or we need a periodic full refresh → fetch everything
+                    did_full_fetch = True
                     if car_active:
                         logger.info(
                             "Smart poll: vehicle %s is ACTIVE (moving=%s, charging=%s, ac=%s). Full fetch.",
@@ -714,7 +716,8 @@ class DataCollector:
                     ))
                 # -------------------------------------------------------------------
 
-                cs.last_fetch_at = now
+                if did_full_fetch:
+                    cs.last_fetch_at = now
                 cs.status = "active"
                 await session.commit()
                 logger.info("Collection complete for vehicle %s", user_vehicle_id)

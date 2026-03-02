@@ -5,6 +5,10 @@ All notable changes to the iVDrive project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-03-02
+### Fixed
+- **Smart Polling Full Refresh**: Fixed a logic error where the 30-minute "Full Refresh" timer was reset on every lightweight poll. The system will now correctly perform a full telemetry update every 30 minutes even when the vehicle is parked.
+
 ## [1.0.2] - 2026-03-01
 ### Fixed
 - **Smart Polling Loop**: Fixed a bug where the `_sync_vehicles_from_db` daemon would forcefully reset the APScheduler job to the "Parked" interval every 90 seconds, causing rapid API polling and ignoring the user's active/parked settings.
