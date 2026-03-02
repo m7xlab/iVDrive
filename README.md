@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  Use iVDrive online at <a href="https://ivdrive.eu">ivdrive.eu</a> — sign up, add your Škoda Connect car, and view your EV data. No setup required. Self-hosting is available for those who prefer to run the stack themselves.
+  Use iVDrive online at <a href="https://ivdrive.eu">ivdrive.eu</a> — request an invite, get approved, and view your EV data. Self-hosting is available for those who prefer to run the stack themselves.
 </p>
 
 <div align="center">
@@ -36,11 +36,11 @@
 
 ## 🚀 What is iVDrive?
 
-iVDrive is a premium EV data monitoring app for Volkswagen Group vehicles (starting with Škoda). Use it **online at [ivdrive.eu](https://ivdrive.eu)** — sign up, add your car with Škoda Connect credentials, and get a single dashboard for trips, charging, efficiency, and statistics. No installation required. If you prefer to run the stack yourself, you can self-host with Docker.
+iVDrive is a premium EV data monitoring app for Volkswagen Group vehicles (starting with Škoda). Use it **online at [ivdrive.eu](https://ivdrive.eu)** — request an invite, join the beta, and get a single dashboard for trips, charging, efficiency, and statistics. If you prefer to run the stack yourself, you can self-host with Docker.
 
 ### Why iVDrive?
 
-- **Use online** — No setup: go to [ivdrive.eu](https://ivdrive.eu), register, add your car, and start viewing your data.
+- **Beta Access** — Use online at [ivdrive.eu](https://ivdrive.eu). Request an invite, get approved, and start viewing your data.
 - **VW Group EV focus** — Built for Škoda Connect first; designed to extend to other Volkswagen Group EVs.
 - **Single dashboard** — Trips, charging, efficiency, locations, and driving statistics in one place.
 - **Self-host optional** — For advanced users: run the full stack yourself with Docker (see [Getting Started](#-getting-started)).
@@ -105,13 +105,20 @@ If you prefer to run the stack yourself (e.g. on your NAS):
    - Web UI: http://localhost:3035 (or your host/port).
    - API: http://localhost:8000.
 
-4. **Promote Admin User** (Required for Self-Hosters)
-   By default, registration is `open` on self-hosted instances. After registering your first user, promote them to superuser to access the admin panel:
+4. **Initialize Database** (Required for Self-Hosters)
+   Ensure the database and tables are created correctly:
+   ```bash
+   docker compose exec ivdrive-api env PYTHONPATH=/app python -m app.scripts.init_db
+   docker compose exec ivdrive-api env PYTHONPATH=/app alembic stamp head
+   ```
+
+5. **Promote Admin User** (Required for Self-Hosters)
+   After registering your first user via the UI, promote them to superuser to access the admin panel:
    ```bash
    docker compose exec ivdrive-api env PYTHONPATH=/app python -m app.scripts.promote_user --email your@email.com
    ```
 
-5. **Add your vehicle** in the UI with your Škoda Connect credentials.
+6. **Add your vehicle** in the UI with your Škoda Connect credentials.
 
 For more detail, see [Project overview](docs/project_overview.md) and the [docs](docs/README.md).
 
