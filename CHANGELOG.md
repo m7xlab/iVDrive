@@ -5,6 +5,11 @@ All notable changes to the iVDrive project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-03-03
+### Fixed
+- **Smart Polling v2.3.1 (Ghost Polling)**: Refined the `car_active` logic to correctly handle the "Online but Idle" state. Stabilization cycles no longer force active polling for stationary vehicles that happen to be reachable via the Skoda API.
+- **Collector Stabilization**: Added explicit logging to confirm when the stabilization period completes and the collector returns to the parked interval.
+
 ## [1.0.6] - 2026-03-03
 ### Added
 - **Data Sovereignty (Extract My Data)**: Users can now export 1 year of historical telemetry (drives, charging, etc.) as a ZIP-compressed JSON (v1.0) for migration to self-hosted instances.
