@@ -393,7 +393,7 @@ class DataCollector:
                                 and ac_resp.state.upper() in ("ON", "HEATING", "COOLING", "VENTILATION")
                             )
 
-                car_active = is_moving or is_charging or is_ac_on
+                car_active = is_online and (is_moving or is_charging or is_ac_on)
 
                 # ── Step 3: Stabilization (Smart Polling v2.1) ───────────────
                 # When car stops being active, we continue "Active" polling for a few cycles
@@ -414,6 +414,7 @@ class DataCollector:
                     else:
                         # Optimization: Cleanup counter when stabilization is complete
                         self._stale_active_counters.pop(user_vehicle_id, None)
+                        logger.info("Smart poll: stabilization complete for vehicle %s, returning to parked", user_vehicle_id)
 
                 # ── Step 4: Dynamic interval rescheduling ───────────────────
                 # v2.3: When activity is first detected (Parked → Active transition), the
