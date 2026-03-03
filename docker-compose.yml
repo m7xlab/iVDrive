@@ -26,6 +26,8 @@ services:
       APP_BASE_URL: "${APP_BASE_URL:-http://localhost:3000}"
     networks:
       - backend
+    volumes:
+      - ./data/shared_data:/app/shared_data
     # API not exposed on host: reverse proxy and containers reach it via backend network (ivdrive-api:8000)
     depends_on:
       postgres:
@@ -109,5 +111,6 @@ volumes:
   # Docker-managed named volumes (data stored in Docker’s volume dir).
   # To use a fixed host path instead, use bind mounts per service, e.g.:
   #   - ./data/postgresql:/var/lib/postgresql/
+  shared_data:
   postgres_data:
   valkey_data:
