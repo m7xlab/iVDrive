@@ -64,8 +64,6 @@ services:
       SERVICE_REGISTRATION: "${SERVICE_REGISTRATION:-open}"
     networks:
       - backend
-    volumes:
-      - ./_local_docs/scripts:/app/_local_docs/scripts
     depends_on:
       postgres:
         condition: service_healthy
