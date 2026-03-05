@@ -983,8 +983,9 @@ export default function VehicleDetailPage() {
         const acPercent = totalSessionsCount > 0 ? Math.round((acCount / totalSessionsCount) * 100) : 0;
         const dcPercent = totalSessionsCount > 0 ? 100 - acPercent : 0;
 
-        // --- 3. Cost Estimation (Simple €0.25/kWh assumption) ---
-        const estCost = totalKwh * 0.25; // €0.25 per kWh avg
+        // Cost Estimation (Simple €0.25/kWh assumption)
+        // Apply the same finalKwh estimation fallback to Running Cost
+        const estCost = finalKwh * 0.25; // €0.25 per kWh avg
         const costPer100km = totalKm > 0 ? (estCost / totalKm) * 100 : 0;
 
         return (
