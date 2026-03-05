@@ -5,6 +5,17 @@ All notable changes to the iVDrive project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10] - 2026-03-05
+### Fixed
+- **Dynamic Cost Logic**: Replaced hardcoded €0.25/kWh estimate with a real-time weighted average derived from actual charging session costs.
+- **API Data Flow**: Patched `telemetry.py` schema to include `actual_cost_eur`, fixing a bug where cost data was being stripped from API responses.
+- **Analytics Precision**: Increased decimal precision for "Total Energy Added" and updated "Full Charge" reference to 77kWh (accurate for Enyaq iV 80).
+- **Dynamic Savings Calculation**: "Savings vs Gas" now dynamically compares real EV charging costs per 100km against the diesel baseline, instead of using a static estimate.
+
+### Added
+- **Analytics Debug Logs**: Integrated a browser-side debug suite for verifying telemetry calculations in real-time via Developer Tools.
+- **Session Metrics**: Added "Average Energy per Session" to the Total Energy dashboard block.
+
 ## [1.0.9] - 2026-03-05
 ### Added
 - **Analyst-Grade Statistics View (12-Block View)**: A major overhaul of the vehicle detail page, introducing 12 specialized data blocks for deep telemetry analysis.

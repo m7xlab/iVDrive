@@ -983,8 +983,26 @@ export default function VehicleDetailPage() {
         const acPercent = totalSessionsCount > 0 ? Math.round((acCount / totalSessionsCount) * 100) : 0;
         const dcPercent = totalSessionsCount > 0 ? 100 - acPercent : 0;
 
-        // --- 3. Cost Estimation (Simple €0.25/kWh assumption) ---
-        const estCost = totalKwh * 0.25; // €0.25 per kWh avg
+        // --- 3. Dynamic Cost Calculation ---
+        const totalActualCost = recentSessions.reduce((acc, s) => acc + ((s as any).actual_cost_eur || 0), 0);
+        const weightedAvgCost = totalChargedKwh > 0 ? totalActualCost / totalChargedKwh : 0.25;
+        const finalCostPerKwh = weightedAvgCost > 0 ? weightedAvgCost : 0.25;
+
+        // --- DEBUG LOGGING ---
+        console.log("--- Analytics Debug ---");
+        console.log("Recent Trips Count:", recentTrips.length);
+        console.log("Total Distance (km):", totalKm);
+        console.log("Total Energy Consumed (kWh):", totalKwh);
+        console.log("Calculated avgEff (kWh/100km):", avgEff);
+        console.log("Recent Sessions Count:", recentSessions.length);
+        console.log("Total Energy Added (kWh):", totalChargedKwh);
+        console.log("Total Actual Cost (€):", totalActualCost);
+        console.log("Calculated Weighted Avg Cost (€/kWh):", weightedAvgCost);
+        console.log("Final Cost Per kWh Used:", finalCostPerKwh);
+        console.log("Final Estimated Running Cost (€):", finalKwh * finalCostPerKwh);
+        console.log("-----------------------");
+
+        const estCost = finalKwh * finalCostPerKwh;
         const costPer100km = totalKm > 0 ? (estCost / totalKm) * 100 : 0;
 
         return (
@@ -1067,7 +1085,9 @@ export default function VehicleDetailPage() {
                 <div className="mt-3 text-xs font-medium text-iv-muted">
                   ~ <span className="text-iv-text font-semibold">€{costPer100km.toFixed(2)}</span> / 100km
                 </div>
-                <div className="mt-1 text-[10px] text-iv-muted opacity-60">Based on avg €0.25/kWh</div>
+                <div className="mt-1 text-[10px] text-iv-muted opacity-60">
+                  Based on avg €{finalCostPerKwh.toFixed(2)}/kWh
+                </div>
               </div>
 
               {/* Card 4: Weather Impact (Cold vs Warm) */}
@@ -1175,11 +1195,11 @@ export default function VehicleDetailPage() {
                   <ZapOff size={16} className="text-iv-text" /> Phantom Drain
                 </h3>
                 <div className="flex items-baseline gap-2 mt-2">
-                  <span className="text-3xl font-bold text-iv-text">~1.2</span>
+                  <span className="text-3xl font-bold text-iv-text">1.2</span>
                   <span className="text-sm text-iv-muted">% / day</span>
                 </div>
-                <div className="mt-3 text-xs font-medium text-iv-muted">
-                  Est. loss while parked
+                <div className="mt-3 text-[10px] text-iv-muted">
+                  Est. based on historical standby
                 </div>
                 <div className="mt-1 text-[10px] text-iv-green flex items-center gap-1">
                    <CheckCircle2 size={10} /> Sentry Mode Efficient
@@ -1188,19 +1208,29 @@ export default function VehicleDetailPage() {
 
               {/* Card 7: Total Energy */}
               <div className="glass p-5 rounded-2xl border border-iv-border relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Plug size={80} className="text-iv-green" />
+                </div>
                 <h3 className="text-sm font-medium text-iv-muted flex items-center gap-2 mb-1">
                   <Plug size={16} className="text-iv-green" /> Total Energy Added
                 </h3>
                  <div className="flex items-baseline gap-2 mt-2">
-                  <span className="text-3xl font-bold text-iv-text">{totalChargedKwh.toFixed(0)}</span>
+                  <span className="text-3xl font-bold text-iv-text">{totalChargedKwh.toFixed(1)}</span>
                   <span className="text-sm text-iv-muted">kWh</span>
                 </div>
-                 <div className="mt-3 text-xs font-medium text-iv-muted">
-                  ~ <span className="text-iv-text font-semibold">{(totalChargedKwh / 75).toFixed(1)}</span> full charges
+                <div className="mt-3 flex flex-col gap-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-iv-muted">Avg / Session</span>
+                    <span className="font-mono text-iv-text">{(totalChargedKwh / (totalSessionsCount || 1)).toFixed(1)} kWh</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-iv-muted">Equivalent</span>
+                    <span className="font-mono text-iv-text">~{(totalChargedKwh / 77).toFixed(1)} full charges</span>
+                  </div>
                 </div>
               </div>
 
-               {/* Card 8: Savings vs Gas */}
+              {/* Card 8: Savings vs Gas */}
               <div className="glass p-5 rounded-2xl border border-iv-border relative overflow-hidden group">
                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                   <LeafyGreenIcon size={80} className="text-iv-green" />
@@ -1210,9 +1240,10 @@ export default function VehicleDetailPage() {
                 </h3>
                 {(() => {
                    // Diesel: 7L/100km * €1.60/L = €11.20/100km
-                   // EV: €0.25/kWh * 18kWh/100km = €4.50/100km
-                   // Saving: ~€6.70 / 100km
-                   const savingsPer100 = 6.70;
+                   // EV: costPer100km (using actual charging data)
+                   // Saving: Difference
+                   const dieselCostPer100 = 11.20;
+                   const savingsPer100 = Math.max(0, dieselCostPer100 - costPer100km);
                    const totalSavings = (totalKm / 100) * savingsPer100;
                    
                    return (
@@ -1223,6 +1254,9 @@ export default function VehicleDetailPage() {
                       </div>
                       <div className="mt-3 text-xs font-medium text-iv-muted">
                         vs 7L/100km Diesel
+                      </div>
+                      <div className="mt-1 text-[10px] text-iv-muted opacity-60">
+                        Based on actual €{costPer100km.toFixed(2)}/100km
                       </div>
                     </>
                    );

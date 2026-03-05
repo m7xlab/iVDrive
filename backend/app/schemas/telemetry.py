@@ -27,6 +27,8 @@ class ChargingSessionItem(BaseModel):
     end_level: float | None = None
     charging_type: str | None = None
     energy_kwh: float | None = None
+    actual_cost_eur: float | None = None
+    base_cost_eur: float | None = None
     latitude: float | None = None
     longitude: float | None = None
 
