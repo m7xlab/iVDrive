@@ -984,7 +984,7 @@ export default function VehicleDetailPage() {
         const dcPercent = totalSessionsCount > 0 ? 100 - acPercent : 0;
 
         // --- 3. Dynamic Cost Calculation ---
-        const totalActualCost = recentSessions.reduce((acc, s) => acc + (s as any).actual_cost_eur || 0, 0);
+        const totalActualCost = recentSessions.reduce((acc, s) => acc + ((s as any).actual_cost_eur || 0), 0);
         const weightedAvgCost = totalChargedKwh > 0 ? totalActualCost / totalChargedKwh : 0.25;
         const finalCostPerKwh = weightedAvgCost > 0 ? weightedAvgCost : 0.25;
 
