@@ -5,6 +5,15 @@ All notable changes to the iVDrive project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2026-03-05
+### Added
+- **PWA (Progressive Web App) Support**: Implemented a web manifest (`manifest.json`) and mobile metadata to allow "Add to Home Screen" installation on iOS and Android.
+- **Standalone Display Mode**: Configured the UI to hide browser chrome when launched from the home screen, providing a native app-like experience.
+
+### Fixed
+- **Favicon Alignment**: Standardized the site favicon to use the official iVDrive logo across all platforms.
+- **Mobile UI Meta**: Added specialized Apple web-app status bar configurations for improved translucent styling on iPhones.
+
 ## [1.0.10] - 2026-03-05
 ### Fixed
 - **Dynamic Cost Logic**: Replaced hardcoded €0.25/kWh estimate with a real-time weighted average derived from actual charging session costs.

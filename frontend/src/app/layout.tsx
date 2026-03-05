@@ -15,6 +15,12 @@ export const metadata: Metadata = {
   description:
     "Premium electric vehicle monitoring for Volkswagen Group EVs",
   icons: { icon: "/logo.png" },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "iVDrive",
+  },
 };
 
 export default function RootLayout({
