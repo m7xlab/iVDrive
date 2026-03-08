@@ -5,6 +5,13 @@ All notable changes to the iVDrive project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.14] - 2026-03-08
+### Fixed
+- **Manual Refresh Reliability**: Completely refactored the manual refresh mechanism to use a persistent Valkey List instead of fire-and-forget Pub/Sub. Refresh requests now survive collector crashes and connection drops.
+- **Collector Supervision**: Fixed a critical bug where the Pub/Sub listener task was being garbage collected by asyncio. Added a strong task reference and an APScheduler watchdog that automatically restarts the listener if it dies.
+- **Refresh Queue Processor**: Added a dedicated background job in the collector that drains manual refresh requests every 5 seconds, ensuring deterministic execution of one-time full telemetry fetches.
+- **Smart Polling Bypass**: Verified the `force=True` mechanism to ensure manual refreshes correctly ignore parked-state guards while returning the vehicle to its proper polling interval immediately after completion.
+
 ## [1.0.13] - 2026-03-08
 ### Added
 - **Umami Analytics Integration**: Added support for website analytics via Umami. The tracking script is injected server-side using Next.js `<Script strategy="afterInteractive">`. Controlled entirely via environment variables — no code changes needed to enable/disable.
