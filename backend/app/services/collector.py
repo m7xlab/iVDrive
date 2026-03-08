@@ -126,7 +126,14 @@ class DataCollector:
     async def _watchdog_listen_task(self) -> None:
         """Restart the pub/sub listener task if it has died unexpectedly."""
         if self._listen_task is None or self._listen_task.done():
-            logger.warning("Watchdog: _listen_events task is dead, restarting.")
+            if self._listen_task and self._listen_task.done():
+                exc = self._listen_task.exception() if not self._listen_task.cancelled() else None
+                if exc:
+                    logger.exception("Watchdog: _listen_events task failed with error — restarting.", exc_info=exc)
+                else:
+                    logger.warning("Watchdog: _listen_events task ended (cancelled or clean exit) — restarting.")
+            else:
+                logger.warning("Watchdog: _listen_events task was never started — starting now.")
             self._listen_task = asyncio.ensure_future(self._listen_events())
 
     async def _process_manual_refresh_queue(self) -> None:
