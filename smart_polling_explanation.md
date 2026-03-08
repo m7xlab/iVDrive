@@ -4,7 +4,7 @@ How iVDrive monitors your vehicle efficiently while respecting battery life and 
 
 ## ⚙️ The Blueprint
 A technical visualization of the polling logic here:
-👉 **[smart_polling_blueprint.html](smart_polling_blueprint.html)**
+👉 **[Smart Polling Blueprint](https://rawcdn.githack.com/m7xlab/ivdrive/8ab2ff8f0a3f31f0a0a5a74915aef5a5a58812e3/smart_polling_blueprint.html)**
 
 ---
 
