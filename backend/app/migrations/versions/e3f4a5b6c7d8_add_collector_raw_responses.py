@@ -1,7 +1,7 @@
 """Add collector_raw_responses table
 
 Revision ID: e3f4a5b6c7d8
-Revises: ceb70f201aef
+Revises: a2b3c4d5e6f7
 Create Date: 2026-03-10 00:00:00.000000
 """
 from typing import Sequence, Union
