@@ -1022,20 +1022,6 @@ export default function VehicleDetailPage() {
         const weightedAvgCost = totalChargedKwh > 0 ? totalActualCost / totalChargedKwh : 0.25;
         const finalCostPerKwh = weightedAvgCost > 0 ? weightedAvgCost : 0.25;
 
-        // --- DEBUG LOGGING ---
-        console.log("--- Analytics Debug ---");
-        console.log("Recent Trips Count:", recentTrips.length);
-        console.log("Total Distance (km):", totalKm);
-        console.log("Total Energy Consumed (kWh):", totalKwh);
-        console.log("Calculated avgEff (kWh/100km):", avgEff);
-        console.log("Recent Sessions Count:", recentSessions.length);
-        console.log("Total Energy Added (kWh):", totalChargedKwh);
-        console.log("Total Actual Cost (€):", totalActualCost);
-        console.log("Calculated Weighted Avg Cost (€/kWh):", weightedAvgCost);
-        console.log("Final Cost Per kWh Used:", finalCostPerKwh);
-        console.log("Final Estimated Running Cost (€):", finalKwh * finalCostPerKwh);
-        console.log("-----------------------");
-
         const estCost = finalKwh * finalCostPerKwh;
         const costPer100km = totalKm > 0 ? (estCost / totalKm) * 100 : 0;
 
