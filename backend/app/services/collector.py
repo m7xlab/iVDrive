@@ -954,7 +954,6 @@ class DataCollector:
                         except Exception:
                             return None
 
-                from app.config import settings
                 if settings.collect_raw_data:
                     session.add(CollectorRawResponse(
                         user_vehicle_id=user_vehicle_id,
