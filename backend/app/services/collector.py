@@ -563,6 +563,9 @@ class DataCollector:
                             max_gap_s=parked_gap_s,
                             **cs_data,
                         )
+                        # We commit here to ensure the Target SoC update is saved,
+                        # avoiding an unconditional commit when 'charging' is None.
+                        await session.commit()
 
                     last_known = self._last_connection_state.get(user_vehicle_id)
                     state_changed = (last_known is None) or (last_known != is_online)
@@ -590,8 +593,6 @@ class DataCollector:
                             "Skipping DB write.",
                             user_vehicle_id, is_online,
                         )
-                        # We still commit because we may have updated ChargingState target SoC above
-                        await session.commit()
                     return
 
                 # ══════════════════════════════════════════════════════════════
