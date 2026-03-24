@@ -11,8 +11,20 @@ function getFlagEmoji(countryCode: string) {
   return String.fromCodePoint(...codePoints);
 }
 
+interface AdminStats {
+  total_users: number;
+  pending_invites: number;
+  total_vehicles: number;
+  vehicles_by_country: { name: string; value: number }[];
+  sync_error_rate: number;
+  connector_status: { name: string; value: number }[];
+  total_trips: number;
+  total_charging_sessions: number;
+  vehicles_by_model: { name: string; value: number }[];
+}
+
 export function StatisticsDashboard() {
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +74,7 @@ export function StatisticsDashboard() {
         <div className="glass rounded-xl border border-iv-border p-6">
           <h3 className="text-sm font-medium text-iv-muted mb-4 flex items-center gap-2"><MapPin size={16} className="text-iv-muted" /> Fleet Distribution</h3>
           <div className="space-y-3">
-            {stats.vehicles_by_country.map((item: any) => (
+            {stats.vehicles_by_country.map((item) => (
               <div key={item.name} className="flex items-center">
                 <span className="w-16 text-sm font-medium text-iv-text flex items-center gap-1.5">
                   <span className="text-lg leading-none">{getFlagEmoji(item.name)}</span> {item.name}
@@ -81,7 +93,7 @@ export function StatisticsDashboard() {
           <div className="glass rounded-xl border border-iv-border p-6">
             <h3 className="text-sm font-medium text-iv-muted mb-4 flex items-center gap-2"><Activity size={16} className="text-iv-muted" /> Connector Health</h3>
             <div className="space-y-3">
-              {stats.connector_status.map((item: any) => (
+              {stats.connector_status.map((item) => (
                 <div key={item.name} className="flex justify-between items-center border-b border-iv-border/50 pb-2 last:border-0 last:pb-0">
                   <span className={`text-sm ${item.name === "active" ? "text-iv-green" : "text-iv-danger"}`}>{item.name === "active" ? "Healthy (Active)" : item.name}</span>
                   <span className="text-sm font-medium">{item.value}</span>
@@ -110,7 +122,7 @@ export function StatisticsDashboard() {
       <div className="glass rounded-xl border border-iv-border p-6">
         <h3 className="text-sm font-medium text-iv-muted mb-4 flex items-center gap-2"><Car size={16} className="text-iv-muted" /> Models</h3>
         <div className="flex flex-wrap gap-2">
-          {stats.vehicles_by_model.map((item: any) => (
+          {stats.vehicles_by_model.map((item) => (
             <span key={item.name} className="px-3 py-1.5 bg-iv-surface border border-iv-border rounded-lg text-sm text-iv-text">
               {item.name} <span className="text-iv-muted ml-2">{item.value}</span>
             </span>

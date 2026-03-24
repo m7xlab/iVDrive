@@ -363,7 +363,8 @@ async def admin_statistics(
     
     # Calculate Sync Error Rate
     total_connectors = sum(item["value"] for item in connector_status)
-    error_connectors = sum(item["value"] for item in connector_status if item["name"] in ("token_error", "auth_failed"))
+    error_statuses = {"token_error", "auth_failed", "connection_error"}
+    error_connectors = sum(item["value"] for item in connector_status if item["name"] in error_statuses)
     sync_error_rate = (error_connectors / total_connectors * 100) if total_connectors > 0 else 0.0
 
     return {
