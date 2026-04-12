@@ -6,7 +6,28 @@ const API_BASE =
     ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "")
     : "";
 
+
+export function setAuthFlag() {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("is_logged_in", "true");
+  }
+}
+
+export function clearAuthFlag() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("is_logged_in");
+  }
+}
+
+export function hasAuthFlag(): boolean {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("is_logged_in") === "true";
+  }
+  return false;
+}
+
 export function clearTokens() {
+  clearAuthFlag();
   // Deprecated: No longer used for localStorage, backend handles HttpOnly cookies.
 }
 
@@ -53,6 +74,9 @@ async function apiFetch(
 }
 
 export const api = {
+  hasAuthFlag,
+  setAuthFlag,
+  clearAuthFlag,
   clearTokens,
 
   async login(email: string, password: string) {
@@ -64,6 +88,7 @@ export const api = {
     });
     if (!res.ok) throw new Error((await res.json()).detail || "Login failed");
     const data = await res.json();
+    if (!data.requires_2fa) setAuthFlag();
     
     return data;
   },
@@ -77,7 +102,7 @@ export const api = {
     });
     if (!res.ok) throw new Error((await res.json()).detail || "2FA verification failed");
     const tokens: TokenPair = await res.json();
-    
+    setAuthFlag();
     return tokens;
   },
 
@@ -90,7 +115,7 @@ export const api = {
     });
     if (!res.ok) throw new Error((await res.json()).detail || "Recovery code verification failed");
     const tokens: TokenPair = await res.json();
-    
+    setAuthFlag();
     return tokens;
   },
 
@@ -132,6 +157,7 @@ export const api = {
     });
     if (!res.ok)
       throw new Error((await res.json()).detail || "Registration failed");
+    setAuthFlag();
     return res.json();
   },
 
@@ -347,11 +373,20 @@ export const api = {
     async deleteAccount() {
     const res = await apiFetch("/api/v1/auth/me", { method: "DELETE" });
     if (!res.ok) throw new Error("Failed to delete account");
-    clearTokens();
+    clearAuthFlag();
   },
 
-  logout() {
-    clearTokens();
+  async logout() {
+    try {
+      await fetch(`${API_BASE}/api/v1/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+    } catch (e) {
+      console.error("Logout failed:", e);
+    }
+    clearAuthFlag();
   },
 
   async getVehicles() {
