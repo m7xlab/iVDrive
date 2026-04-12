@@ -350,7 +350,16 @@ export const api = {
     clearTokens();
   },
 
-  logout() {
+  async logout() {
+    try {
+      await fetch(`${API_BASE}/api/v1/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+    } catch (e) {
+      console.error("Logout failed:", e);
+    }
     clearTokens();
   },
 

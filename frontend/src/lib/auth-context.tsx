@@ -31,7 +31,7 @@ interface AuthContextType {
     displayName?: string,
     inviteToken?: string
   ) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -94,8 +94,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/");
   };
 
-  const logout = () => {
-    api.logout();
+  const logout = async () => {
+    await api.logout();
     setUser(null);
     router.push("/login");
   };
