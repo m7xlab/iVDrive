@@ -43,13 +43,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const refreshUser = useCallback(async () => {
+    if (!api.hasAuthFlag()) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+    
     try {
       const me = await api.getMe();
       setUser(me);
     } catch (err: any) {
       setUser(null);
       if (err.message === "Not authenticated") {
-        api.clearTokens();
+        api.clearAuthFlag();
       }
     } finally {
       setLoading(false);
