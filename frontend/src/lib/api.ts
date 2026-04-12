@@ -59,6 +59,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ email, password }),
     });
     if (!res.ok) throw new Error((await res.json()).detail || "Login failed");
@@ -71,6 +72,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/v1/auth/login/verify-2fa`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ "2fa_token": token2FA, code }),
     });
     if (!res.ok) throw new Error((await res.json()).detail || "2FA verification failed");
@@ -83,6 +85,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/v1/auth/login/verify-recovery-code`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ "2fa_token": token2FA, recovery_code: recoveryCode }),
     });
     if (!res.ok) throw new Error((await res.json()).detail || "Recovery code verification failed");
@@ -119,6 +122,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         email,
         password,
@@ -141,6 +145,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/v1/auth/invite-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ email }),
     });
     if (!res.ok)
@@ -152,6 +157,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/v1/auth/forgot-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ email }),
     });
     if (!res.ok)
@@ -163,6 +169,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/v1/auth/reset-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ token, new_password: newPassword }),
     });
     if (!res.ok)
@@ -316,6 +323,7 @@ export const api = {
   async updateMe(data: { display_name?: string }) {
     const res = await apiFetch("/api/v1/auth/me", {
       method: "PUT",
+      credentials: "include",
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error("Update failed");
@@ -325,6 +333,7 @@ export const api = {
   async changePassword(oldPassword: string, newPassword: string) {
     const res = await apiFetch("/api/v1/auth/me/password", {
       method: "PUT",
+      credentials: "include",
       body: JSON.stringify({
         old_password: oldPassword,
         new_password: newPassword,
@@ -395,6 +404,7 @@ export const api = {
   ) {
     const res = await apiFetch(`/api/v1/vehicles/${id}`, {
       method: "PUT",
+      credentials: "include",
       body: JSON.stringify(data),
     });
     if (!res.ok) {
@@ -743,6 +753,7 @@ export const api = {
       `/api/v1/vehicles/${vehicleId}/commands/${command}`,
       {
         method: "POST",
+      credentials: "include",
         body: body ? JSON.stringify(body) : undefined,
       }
     );
@@ -808,6 +819,7 @@ export const api = {
   async deleteGeofence(id: string) {
     const res = await apiFetch(`/api/v1/settings/geofences/${id}`, {
       method: "DELETE",
+      credentials: "include",
     });
     if (!res.ok) throw new Error("Failed to delete geofence");
   },
