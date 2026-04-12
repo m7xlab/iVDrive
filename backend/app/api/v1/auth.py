@@ -266,14 +266,18 @@ async def verify_2fa_login(response: Response, body: TwoFactorLoginRequest, db: 
     user.last_totp_at = _totp_counter()
     await db.flush()
 
+    access_token = create_access_token(str(user.id))
+    refresh_token = create_refresh_token(str(user.id))
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=not settings.debug if hasattr(settings, "debug") else False, samesite="lax", max_age=settings.access_token_expire_minutes * 60)
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=not settings.debug if hasattr(settings, "debug") else False, samesite="lax", max_age=settings.refresh_token_expire_days * 24 * 60 * 60)
     return TokenResponse(
-        access_token=create_access_token(str(user.id)),
-        refresh_token=create_refresh_token(str(user.id)),
+        access_token=access_token,
+        refresh_token=refresh_token,
     )
 
 
 @router.post("/login/verify-recovery-code", response_model=TokenResponse)
-async def verify_recovery_code_login(body: RecoveryCodeLoginRequest, db: AsyncSession = Depends(get_db)):
+async def verify_recovery_code_login(response: Response, body: RecoveryCodeLoginRequest, db: AsyncSession = Depends(get_db)):
     """Authenticate using a one-time recovery code (for lost TOTP devices).
 
     The recovery code is permanently deleted after use.
@@ -323,9 +327,13 @@ async def verify_recovery_code_login(body: RecoveryCodeLoginRequest, db: AsyncSe
     user.recovery_codes = updated_codes if updated_codes else None
     await db.flush()
 
+    access_token = create_access_token(str(user.id))
+    refresh_token = create_refresh_token(str(user.id))
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=not settings.debug if hasattr(settings, "debug") else False, samesite="lax", max_age=settings.access_token_expire_minutes * 60)
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=not settings.debug if hasattr(settings, "debug") else False, samesite="lax", max_age=settings.refresh_token_expire_days * 24 * 60 * 60)
     return TokenResponse(
-        access_token=create_access_token(str(user.id)),
-        refresh_token=create_refresh_token(str(user.id)),
+        access_token=access_token,
+        refresh_token=refresh_token,
     )
 
 
@@ -361,14 +369,20 @@ async def refresh(request: Request, response: Response, body: RefreshRequest = N
             detail="Invalid token",
         )
 
+    access_token = create_access_token(subject)
+    new_refresh = create_refresh_token(subject)
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=not settings.debug if hasattr(settings, "debug") else False, samesite="lax", max_age=settings.access_token_expire_minutes * 60)
+    response.set_cookie(key="refresh_token", value=new_refresh, httponly=True, secure=not settings.debug if hasattr(settings, "debug") else False, samesite="lax", max_age=settings.refresh_token_expire_days * 24 * 60 * 60)
     return TokenResponse(
-        access_token=create_access_token(subject),
-        refresh_token=create_refresh_token(subject),
+        access_token=access_token,
+        refresh_token=new_refresh,
     )
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
 async def logout(response: Response, body: RefreshRequest = None):
+    response.delete_cookie(key="access_token", httponly=True, samesite="lax")
+    response.delete_cookie(key="refresh_token", httponly=True, samesite="lax")
     return {"detail": "Successfully logged out"}
 
 
