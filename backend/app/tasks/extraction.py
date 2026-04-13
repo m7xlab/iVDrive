@@ -26,15 +26,17 @@ async def process_data_extraction(user_id: uuid.UUID, job_id: uuid.UUID, use_gcs
             password = ''.join(secrets.choice(alphabet) for i in range(16))
             enc_zip_path = zip_path.replace(".zip", "_enc.zip")
 
-            with pyzipper.AESZipFile(enc_zip_path, 'w', compression=pyzipper.ZIP_LZMA, encryption=pyzipper.WZ_AES) as zf:
-                zf.setpassword(password.encode('utf-8'))
-                zf.write(zip_path, os.path.basename(zip_path))
+            def encrypt_zip():
+                with pyzipper.AESZipFile(enc_zip_path, 'w', compression=pyzipper.ZIP_LZMA, encryption=pyzipper.WZ_AES) as zf:
+                    zf.setpassword(password.encode('utf-8'))
+                    zf.write(zip_path, os.path.basename(zip_path))
                 
+            await asyncio.to_thread(encrypt_zip)
             os.remove(zip_path)
 
             storage = StorageProvider(use_gcs=use_gcs)
             blob_name = f"exports/{user_id}/{os.path.basename(enc_zip_path)}"
-            storage.upload_file(enc_zip_path, blob_name)
+            await storage.upload_file(enc_zip_path, blob_name)
             
             os.remove(enc_zip_path)
 

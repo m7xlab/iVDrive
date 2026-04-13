@@ -1,5 +1,6 @@
 import os
 import boto3
+import asyncio
 from datetime import timedelta
 from google.cloud import storage
 
@@ -26,12 +27,12 @@ class StorageProvider:
                 aws_secret_access_key=self.secret_key
             )
 
-    def upload_file(self, file_path: str, destination_blob_name: str):
+    async def upload_file(self, file_path: str, destination_blob_name: str):
         if self.use_gcs:
             blob = self.bucket.blob(destination_blob_name)
-            blob.upload_from_filename(file_path)
+            await asyncio.to_thread(blob.upload_from_filename, file_path)
         else:
-            self.client.upload_file(file_path, self.bucket_name, destination_blob_name)
+            await asyncio.to_thread(self.client.upload_file, file_path, self.bucket_name, destination_blob_name)
 
     def generate_download_url(self, blob_name: str, expiration=timedelta(hours=24)) -> str:
         if self.use_gcs:
