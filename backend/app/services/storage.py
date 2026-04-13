@@ -3,6 +3,7 @@ import boto3
 import asyncio
 from datetime import timedelta
 from google.cloud import storage
+from botocore.client import Config
 
 class StorageProvider:
     def __init__(self, use_gcs=False):
@@ -24,7 +25,9 @@ class StorageProvider:
                 's3',
                 endpoint_url=self.s3_endpoint,
                 aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key
+                aws_secret_access_key=self.secret_key,
+                config=Config(signature_version='s3v4', s3={'addressing_style': 'path'}),
+                region_name='us-east-1'
             )
 
     async def upload_file(self, file_path: str, destination_blob_name: str):
