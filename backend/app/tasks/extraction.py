@@ -25,35 +25,38 @@ async def process_data_extraction(user_id: uuid.UUID, job_id: uuid.UUID, use_gcs
             if not zip_path:
                 raise Exception("No vehicle data found to export.")
 
-            alphabet = string.ascii_letters + string.digits
-            password = ''.join(secrets.choice(alphabet) for i in range(16))
             enc_zip_path = zip_path.replace(".zip", "_enc.zip")
+            try:
+                alphabet = string.ascii_letters + string.digits
+                password = ''.join(secrets.choice(alphabet) for i in range(16))
 
-            def encrypt_zip():
-                with pyzipper.AESZipFile(enc_zip_path, 'w', compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as zf:
-                    zf.setpassword(password.encode('utf-8'))
-                    zf.write(zip_path, os.path.basename(zip_path))
-                
-            await asyncio.to_thread(encrypt_zip)
-            os.remove(zip_path)
+                def encrypt_zip():
+                    with pyzipper.AESZipFile(enc_zip_path, 'w', compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as zf:
+                        zf.setpassword(password.encode('utf-8'))
+                        zf.write(zip_path, os.path.basename(zip_path))
+                    
+                await asyncio.to_thread(encrypt_zip)
 
-            storage = StorageProvider(use_gcs=use_gcs)
-            blob_name = f"exports/{user_id}/{os.path.basename(enc_zip_path)}"
-            await storage.upload_file(enc_zip_path, blob_name)
-            
-            os.remove(enc_zip_path)
+                storage = StorageProvider(use_gcs=use_gcs)
+                blob_name = f"exports/{user_id}/{os.path.basename(enc_zip_path)}"
+                await storage.upload_file(enc_zip_path, blob_name)
 
-            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-            await db.execute(
-                update(ExtractionJob).where(ExtractionJob.id == job_id)
-                .values(
-                    status=ExtractionJobStatus.COMPLETED, 
-                    file_url=blob_name,
-                    password=password,
-                    expires_at=expires_at
+                expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+                await db.execute(
+                    update(ExtractionJob).where(ExtractionJob.id == job_id)
+                    .values(
+                        status=ExtractionJobStatus.COMPLETED, 
+                        file_url=blob_name,
+                        password=password,
+                        expires_at=expires_at
+                    )
                 )
-            )
-            await db.commit()
+                await db.commit()
+            finally:
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+                if os.path.exists(enc_zip_path):
+                    os.remove(enc_zip_path)
             
     except Exception as e:
         async with async_session() as db:
