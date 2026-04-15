@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.dependencies import get_current_user
 from app.database import get_db
-from app.models.telemetry import Trip, ChargingSession, VehiclePosition, ChargingState, VehicleState, ConnectionState, BatteryHealth, PowerUsage, ChargingCurve, ChargingPower, DriveRangeEstimatedFull, DriveConsumption, ClimatizationState, OutsideTemperature, BatteryTemperature, WeconnectError
+from app.models.telemetry import Trip, ChargingSession, VehiclePosition, ChargingState, VehicleState, ConnectionState, BatteryHealth, PowerUsage, ChargingCurve, ChargingPower, DriveRangeEstimatedFull, DriveConsumption, ClimatizationState, OutsideTemperature, BatteryTemperature, WeconnectError, Drive
 from app.models.user import User
 from app.models.vehicle import UserVehicle
 from app.schemas.telemetry import PulseResponse
@@ -40,15 +40,16 @@ async def get_efficiency_curve(
     
     stmt = (
         select(
-            func.round(Trip.avg_temp_celsius).label("temp"),
-            func.avg(Trip.kwh_consumed / Trip.distance_km * 100).label("avg_consumption_kwh_100km"),
-            func.count(Trip.id).label("trip_count")
+            func.round(DriveConsumption.temperature).label("temp"),
+            func.avg(DriveConsumption.consumption).label("avg_consumption_kwh_100km"),
+            func.count(DriveConsumption.id).label("trip_count")
         )
+        .select_from(DriveConsumption)
+        .join(Drive, Drive.id == DriveConsumption.drive_id)
         .where(
-            Trip.user_vehicle_id == vehicle_id,
-            Trip.distance_km > 0,
-            Trip.kwh_consumed > 0,
-            Trip.avg_temp_celsius.isnot(None)
+            Drive.user_vehicle_id == vehicle_id,
+            DriveConsumption.consumption > 0,
+            DriveConsumption.temperature.isnot(None)
         )
         .group_by("temp")
         .order_by("temp")

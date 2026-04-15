@@ -903,12 +903,13 @@ class DataCollector:
                             model_cls=DriveConsumption,
                             user_vehicle_id=user_vehicle_id,
                             match_keys={"consumption": consumption_val},
-                            volatile_keys=[],
+                            volatile_keys=["temperature"],
                             now=now,
                             max_gap_s=max_gap_s,
                             extra_filter=(DriveConsumption.drive_id == drive_obj.id),
                             drive_id=drive_obj.id,
                             consumption=consumption_val,
+                            temperature=temp_c,
                         )
 
                 if ac_resp and ac_resp.state:
