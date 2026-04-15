@@ -21,18 +21,22 @@ async def process_data_extraction(user_id: uuid.UUID, job_id: uuid.UUID, use_gcs
             await db.execute(update(ExtractionJob).where(ExtractionJob.id == job_id).values(status=ExtractionJobStatus.PROCESSING))
             await db.commit()
 
-            zip_path = await service.generate_user_export(user_id)
-            if not zip_path:
-                raise Exception("No vehicle data found to export.")
-
-            enc_zip_path = zip_path.replace(".zip", "_enc.zip")
+            zip_path = None
+            enc_zip_path = None
             try:
+                zip_path = await service.generate_user_export(user_id)
+                if not zip_path:
+                    raise Exception("No vehicle data found to export.")
+
+                enc_zip_path = zip_path.replace(".zip", "_enc.zip")
                 alphabet = string.ascii_letters + string.digits
                 password = ''.join(secrets.choice(alphabet) for i in range(16))
 
                 def encrypt_zip():
                     with pyzipper.AESZipFile(enc_zip_path, 'w', compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as zf:
                         zf.setpassword(password.encode('utf-8'))
+                        # Enforce stronger AES-256
+                        zf.setencryption(pyzipper.WZ_AES, nbits=256)
                         zf.write(zip_path, os.path.basename(zip_path))
                     
                 await asyncio.to_thread(encrypt_zip)
@@ -53,9 +57,9 @@ async def process_data_extraction(user_id: uuid.UUID, job_id: uuid.UUID, use_gcs
                 )
                 await db.commit()
             finally:
-                if os.path.exists(zip_path):
+                if zip_path and os.path.exists(zip_path):
                     os.remove(zip_path)
-                if os.path.exists(enc_zip_path):
+                if enc_zip_path and os.path.exists(enc_zip_path):
                     os.remove(enc_zip_path)
             
     except Exception as e:

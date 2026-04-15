@@ -78,12 +78,21 @@ export async function apiFetch(
     if (refreshed) {
       // Retry
       res = await fetch(`${API_BASE}${path}`, fetchOptions);
+    } else {
+      // If refresh failed, ensure client is marked as logged out.
+      clearAuthFlag();
     }
   }
 
   // Standardize error handling: automatically throw if not OK.
   if (!res.ok && !options.headers?.hasOwnProperty('x-no-throw')) {
      const errorClone = res.clone();
+     // Consume original body to avoid leaks
+     try {
+       await res.body?.cancel();
+     } catch {
+       // Ignore cancel errors
+     }
      let errData;
      try {
        errData = await errorClone.json();

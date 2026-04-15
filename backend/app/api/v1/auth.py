@@ -380,9 +380,21 @@ async def refresh(request: Request, response: Response, body: RefreshRequest = N
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
-async def logout(response: Response, body: RefreshRequest = None):
-    response.delete_cookie(key="access_token", httponly=True, samesite="lax")
-    response.delete_cookie(key="refresh_token", httponly=True, samesite="lax")
+async def logout(response: Response, request: Request, body: RefreshRequest = None):
+    # In a stateless JWT system, true invalidation requires a blocklist, 
+    # but deleting cookies prevents subsequent authenticated requests from the browser.
+    response.delete_cookie(
+        key="access_token", 
+        httponly=True, 
+        secure=not settings.debug if hasattr(settings, "debug") else False,
+        samesite="lax"
+    )
+    response.delete_cookie(
+        key="refresh_token", 
+        httponly=True, 
+        secure=not settings.debug if hasattr(settings, "debug") else False,
+        samesite="lax"
+    )
     return {"detail": "Successfully logged out"}
 
 
