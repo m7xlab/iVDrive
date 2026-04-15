@@ -31,7 +31,7 @@ interface AuthContextType {
     displayName?: string,
     inviteToken?: string
   ) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -43,17 +43,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const refreshUser = useCallback(async () => {
+    if (!api.hasAuthFlag()) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+    
     try {
-      const tokens = api.getTokens();
-      if (!tokens?.access_token) {
-        setUser(null);
-        return;
-      }
       const me = await api.getMe();
       setUser(me);
-    } catch {
+    } catch (err: any /* eslint-disable-line */) {
       setUser(null);
-      api.clearTokens();
+      if (err.status === 401 || err.message === "Not authenticated") {
+        api.clearAuthFlag();
+      }
     } finally {
       setLoading(false);
     }
@@ -97,8 +100,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/");
   };
 
-  const logout = () => {
-    api.logout();
+  const logout = async () => {
+    await api.logout();
     setUser(null);
     router.push("/login");
   };
