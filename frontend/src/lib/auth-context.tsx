@@ -52,9 +52,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const me = await api.getMe();
       setUser(me);
-    } catch (err: any) {
+    } catch (err: any /* eslint-disable-line */) {
       setUser(null);
-      if (err.message === "Not authenticated") {
+      if (err.status === 401 || err.message === "Not authenticated") {
         api.clearAuthFlag();
       }
     } finally {
