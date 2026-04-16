@@ -53,9 +53,11 @@ async def invalidate_vehicle_cache(vehicle_id: str) -> None:
     try:
         pattern = f"ivdrive:api:cache:*/vehicles/{vehicle_id}*"
         cursor = '0'
-        while cursor != '0':
+        while True:
             cursor, keys = await valkey_client.scan(cursor=cursor, match=pattern, count=100)
             if keys:
                 await valkey_client.delete(*keys)
+            if cursor == 0 or cursor == '0' or cursor == b'0':
+                break
     except Exception as e:
         logger.error(f"Valkey cache invalidation failed: {e}")

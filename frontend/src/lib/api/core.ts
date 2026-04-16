@@ -64,11 +64,22 @@ export async function clearApiCache() {
   requestCache.clear();
 }
 
-export function invalidateApiCache(vehicleId: string) {
+export function invalidateApiCache(vehicleId?: string) {
+  if (!vehicleId) {
+    requestCache.clear();
+    return;
+  }
   const matchString = `/api/v1/vehicles/${vehicleId}`;
   for (const key of requestCache.keys()) {
-    if (key.includes(matchString)) {
-      requestCache.delete(key);
+    try {
+      const url = new URL(key, "http://localhost");
+      if (url.pathname === matchString || url.pathname.startsWith(`${matchString}/`)) {
+        requestCache.delete(key);
+      }
+    } catch {
+      if (key.includes(matchString)) {
+        requestCache.delete(key);
+      }
     }
   }
 }
@@ -139,12 +150,14 @@ export async function apiFetch(
 
   // Invalidate cache on mutations
   if (options.method && ["POST", "PUT", "PATCH", "DELETE"].includes(options.method.toUpperCase()) && res.ok) {
-    // Basic heuristic: if we mutate /api/v1/vehicles/123/something, we invalidate /api/v1/vehicles/123
     const segments = path.split("/");
     const vehicleIdIndex = segments.indexOf("vehicles") + 1;
     if (vehicleIdIndex > 0 && vehicleIdIndex < segments.length) {
       const vehicleId = segments[vehicleIdIndex];
       invalidateApiCache(vehicleId);
+    } else {
+      // If mutation happens outside of a specific vehicle (e.g. global settings), wipe whole cache
+      clearApiCache();
     }
   }
 

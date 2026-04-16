@@ -41,21 +41,16 @@ class CacheMiddleware(BaseHTTPMiddleware):
                     response = await call_next(request)
                     
                     if response.status_code == 200 and response.headers.get("content-type") == "application/json":
-                        body_bytes = b"".join([section async for section in response.body_iterator])
-                        
-                        try:
-                            json_data = json.loads(body_bytes.decode())
-                            # Fire-and-forget the cache set so we don't block the response
-                            asyncio.create_task(cache_set(cache_key, json_data, expire_seconds=60))
-                        except Exception as e:
-                            logging.error(f"Cache middleware serialization error: {e}")
-                            
-                        return Response(
-                            content=body_bytes,
-                            status_code=response.status_code,
-                            headers=dict(response.headers),
-                            media_type=response.media_type
-                        )
+                        # Prevent memory leaks: only cache if the body is already materialized (e.g. JSONResponse)
+                        # Do not consume body_iterator for StreamingResponses.
+                        if hasattr(response, "body"):
+                            body_bytes = response.body
+                            try:
+                                json_data = json.loads(body_bytes.decode())
+                                asyncio.create_task(cache_set(cache_key, json_data, expire_seconds=60))
+                            except Exception as e:
+                                logging.error(f"Cache middleware serialization error: {e}")
+                            return response
                     return response
         
         return await call_next(request)
