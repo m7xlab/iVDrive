@@ -43,7 +43,7 @@ class CacheMiddleware(BaseHTTPMiddleware):
                     if response.status_code == 200 and response.headers.get("content-type") == "application/json":
                         # Prevent memory leaks: only cache if the body is already materialized (e.g. JSONResponse)
                         # Do not consume body_iterator for StreamingResponses.
-                        if hasattr(response, "body"):
+                        if isinstance(response, JSONResponse) and hasattr(response, "body"):
                             body_bytes = response.body
                             try:
                                 json_data = json.loads(body_bytes.decode())
