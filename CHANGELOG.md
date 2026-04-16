@@ -5,6 +5,17 @@ All notable changes to the iVDrive project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-04-16
+
+### Architecture & Performance 🚀
+- **Backend API Caching**: Integrated a robust Valkey-backed `CacheMiddleware` in `main.py`. Heavy read-only analytical endpoints (`/statistics`, `/analytics`, `/history`, `/trips`) are now natively cached server-side with a 60-second TTL. This drastically reduces PostgreSQL database load during concurrent dashboard mounting and rapid user navigation.
+- **Memory Leak Prevention**: Resolved a critical memory leak in the new `CacheMiddleware`. It now strictly verifies `isinstance(response, JSONResponse)` before caching, guaranteeing that large data streams (like `StreamingResponse` or `FileResponse`) are never unsafely buffered into RAM.
+- **Frontend Cache Deduplication**: Implemented a 60-second in-memory `requestCache` within `apiFetch` for all GET requests to prevent redundant over-fetching when React components mount simultaneously.
+- **Smart Cache Invalidation**: The frontend cache automatically and surgically invalidates itself whenever a user performs a mutation (`POST/PUT/PATCH/DELETE`). The invalidation explicitly parses the request URL to clear only the specific vehicle's data, eliminating stale UI dashboards after setting updates or trip edits.
+- **Native Database Pagination**: Completely rewrote the `/overview/visited` endpoint. Instead of fetching unbounded datasets from Postgres and slicing them in Python, it now leverages SQLAlchemy `union_all` to merge positions and charging sessions directly on the database engine, applying `.offset(skip).limit(limit)` natively for optimal chronological pagination.
+- **Universal Pagination Limits**: Added a standard `skip` offset parameter across all list-returning backend endpoints (Battery, Range, Charging, Trips, etc.) to allow frontends to securely paginate through massive historical datasets without hitting memory limits.
+
+
 ## [Unreleased] - 2026-04-15
 
 ### Added 🌟
