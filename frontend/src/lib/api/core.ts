@@ -62,14 +62,19 @@ const CACHE_TTL_MS = 60000; // 1 minute
 
 // Periodically clean up stale cache entries to prevent Map memory leaks over long sessions
 if (typeof window !== "undefined") {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, val] of requestCache.entries()) {
-      if (now - val.timestamp >= CACHE_TTL_MS) {
-        requestCache.delete(key);
+  // Prevent HMR from spawning multiple intervals
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (!(window as any).__apiCacheCleanupInterval) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__apiCacheCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [key, val] of requestCache.entries()) {
+        if (now - val.timestamp >= CACHE_TTL_MS) {
+          requestCache.delete(key);
+        }
       }
-    }
-  }, 120000); // Check every 2 minutes
+    }, 120000); // Check every 2 minutes
+  }
 }
 
 export async function clearApiCache() {

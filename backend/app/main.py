@@ -34,13 +34,20 @@ class CacheMiddleware(BaseHTTPMiddleware):
                     # Extract user_id from cookie to scope cache keys securely
                     user_id = "anonymous"
                     token = request.cookies.get("access_token")
-                    if token:
-                        try:
-                            payload = decode_token(token)
-                            if payload.get("type") == "access":
-                                user_id = payload.get("sub", "anonymous")
-                        except Exception:
-                            pass
+                    # If there's no token, we do not cache user endpoints to prevent unauthenticated cache poisoning
+                    if not token:
+                        return await call_next(request)
+                    try:
+                        # decode_token securely validates signature via python-jose
+                        payload = decode_token(token)
+                        if payload.get("type") == "access":
+                            user_id = payload.get("sub")
+                            if not user_id:
+                                return await call_next(request)
+                        else:
+                            return await call_next(request)
+                    except Exception:
+                        return await call_next(request)
                             
                     cache_key = f"ivdrive:api:cache:{user_id}:{path}"
                     if request.url.query:
