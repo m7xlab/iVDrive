@@ -47,6 +47,10 @@ export function ChargingStatisticsDashboard({
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(() => {
+      fetchData();
+    }, 60000);
+    return () => clearInterval(interval);
   }, [fetchData]);
 
   const totalCharges = stats.reduce((acc, r) => acc + r.charging_sessions_count, 0);

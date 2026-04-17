@@ -270,6 +270,10 @@ export function CarOverviewDashboard({
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(() => {
+      fetchData();
+    }, 60000);
+    return () => clearInterval(interval);
   }, [fetchData]);
 
   const toggle = (id: StateToggleId) => {

@@ -76,6 +76,11 @@ export function DrivingStatisticsDashboard({
 
   useEffect(() => {
     fetchData();
+    // Live incremental refresh for the current day
+    const interval = setInterval(() => {
+      fetchData();
+    }, 60000); // Poll every 1 minute
+    return () => clearInterval(interval);
   }, [fetchData]);
 
   const latestData = rows.length > 0 ? rows[0] : null;

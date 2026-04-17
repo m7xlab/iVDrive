@@ -96,6 +96,10 @@ export function MileageKMDashboard({ vehicleId, dateRange }: MileageKMDashboardP
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(() => {
+      fetchData();
+    }, 60000);
+    return () => clearInterval(interval);
   }, [fetchData]);
 
   if (loading) {
