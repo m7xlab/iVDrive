@@ -885,9 +885,10 @@ class DataCollector:
                         est_full = float(driving.total_range_in_km) / (soc / 100.0)
                         
                         # Calculate accurate consumption (kWh/100km) from estimated full range and battery capacity
-                        capacity_kwh = getattr(vehicle, "battery_capacity_kwh", 77.0)
-                        if capacity_kwh is None: capacity_kwh = 77.0
-                        consumption_val = (capacity_kwh / est_full) * 100 if est_full > 0 else None
+                        capacity_kwh = getattr(vehicle, "battery_capacity_kwh", None) or 77.0
+                        consumption_val = None
+                        if est_full > 0 and capacity_kwh > 0:
+                            consumption_val = (capacity_kwh / est_full) * 100
                         
                         # DriveRangeEstimatedFull: scoped by drive_id (no user_vehicle_id column)
                         await _update_or_insert_duration_state(
