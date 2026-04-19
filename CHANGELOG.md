@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Enhanced Settings UI**: Added hidden accessibility labels to password forms and built-in visibility toggles (eye icons) for password inputs.
 
 ### Changed ⚙️
+- **Energy Economics Engine Refactor**: Completely replaced the legacy `EnergyPrice` table with a robust 4-table relational architecture (`fuel_prices`, `price_breakdowns`, `economics`, `vignette_prices`). The backend background task now asynchronously ingests and processes granular weekly data across 33 European countries for precise EV vs. ICE cost comparisons.
 - **Frontend State Isolation**: Refactored the vehicle settings dashboard to strictly isolate edit forms per vehicle, preventing configuration state bleed when multiple vehicles are present.
 
 ## [Unreleased] - 2026-04-16
