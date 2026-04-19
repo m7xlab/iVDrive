@@ -115,12 +115,14 @@ export default function SettingsPage() {
   const [reauthSpin, setReauthSpin] = useState("");
   const [reauthLoading, setReauthLoading] = useState(false);
   const [editingInterval, setEditingInterval] = useState<string | null>(null);
-  const [activeInterval, setActiveInterval] = useState(300);
-  const [parkedInterval, setParkedInterval] = useState(1800);
-  const [collectionEnabled, setCollectionEnabled] = useState(true);
-  const [incognitoMode, setIncognitoMode] = useState(false);
-  const [wltpRange, setWltpRange] = useState<string>("");
-  const [countryCode, setCountryCode] = useState<string>("");
+  const [editForms, setEditForms] = useState<Record<string, {
+    activeInterval: number;
+    parkedInterval: number;
+    collectionEnabled: boolean;
+    incognitoMode: boolean;
+    wltpRange: string;
+    countryCode: string;
+  }>>({});
 
   const [geofences, setGeofences] = useState<Geofence[]>([]);
   const [geofencesLoading, setGeofencesLoading] = useState(true);
@@ -235,14 +237,16 @@ export default function SettingsPage() {
 
   const handleSaveInterval = async (id: string) => {
     try {
-      const parsedWltp = wltpRange !== "" ? parseFloat(wltpRange) : null;
+      const form = editForms[id];
+      if (!form) return;
+      const parsedWltp = form.wltpRange !== "" ? parseFloat(form.wltpRange) : null;
       await api.updateVehicle(id, {
-        active_interval_seconds: activeInterval,
-        parked_interval_seconds: parkedInterval,
-        collection_enabled: collectionEnabled,
-        incognito_mode: incognitoMode,
+        active_interval_seconds: form.activeInterval,
+        parked_interval_seconds: form.parkedInterval,
+        collection_enabled: form.collectionEnabled,
+        incognito_mode: form.incognitoMode,
         wltp_range_km: parsedWltp && !isNaN(parsedWltp) ? parsedWltp : null,
-        country_code: countryCode.trim() ? countryCode.trim().toUpperCase() : null,
+        country_code: form.countryCode.trim() ? form.countryCode.trim().toUpperCase() : null,
       });
       await loadVehicles();
       setEditingInterval(null);
@@ -485,7 +489,7 @@ export default function SettingsPage() {
                           <span className="text-[10px] text-iv-muted block leading-tight mt-0.5">Collect background telemetry from Skoda API. Disabling pauses all data collection.</span>
                         </div>
                         <label aria-label="Sync Enabled toggle" className="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                          <input type="checkbox" checked={collectionEnabled} onChange={(e) => setCollectionEnabled(e.target.checked)} className="sr-only peer" />
+                          <input type="checkbox" checked={editForms[v.id]?.collectionEnabled ?? true} onChange={(e) => setEditForms(prev => ({ ...prev, [v.id]: { ...prev[v.id], collectionEnabled: e.target.checked } }))} className="sr-only peer" />
                           <div className="w-9 h-5 bg-iv-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-iv-green transition-colors"></div>
                         </label>
                       </div>
@@ -495,23 +499,23 @@ export default function SettingsPage() {
                           <span className="text-[10px] text-iv-muted block leading-tight mt-0.5">Pause GPS/location tracking while preserving battery & charging stats.</span>
                         </div>
                         <label aria-label="Incognito Mode toggle" className="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                          <input type="checkbox" checked={incognitoMode} onChange={(e) => setIncognitoMode(e.target.checked)} className="sr-only peer" />
+                          <input type="checkbox" checked={editForms[v.id]?.incognitoMode ?? false} onChange={(e) => setEditForms(prev => ({ ...prev, [v.id]: { ...prev[v.id], incognitoMode: e.target.checked } }))} className="sr-only peer" />
                           <div className="w-9 h-5 bg-iv-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-iv-cyan transition-colors"></div>
                         </label>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-iv-muted w-28 flex-shrink-0">Active Telemetry</span>
-                        <input type="range" min={60} max={1800} step={60} value={activeInterval}
-                          onChange={(e) => setActiveInterval(Number(e.target.value))}
+                        <input type="range" min={60} max={1800} step={60} value={editForms[v.id]?.activeInterval ?? 300}
+                          onChange={(e) => setEditForms(prev => ({ ...prev, [v.id]: { ...prev[v.id], activeInterval: Number(e.target.value) } }))}
                           className="flex-1 accent-iv-green min-w-0" />
-                        <span className="text-xs text-iv-cyan font-mono w-14 text-right flex-shrink-0">{intervalLabel(activeInterval)}</span>
+                        <span className="text-xs text-iv-cyan font-mono w-14 text-right flex-shrink-0">{intervalLabel(editForms[v.id]?.activeInterval ?? 300)}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-iv-muted w-28 flex-shrink-0">Parked Check</span>
-                        <input type="range" min={300} max={7200} step={300} value={parkedInterval}
-                          onChange={(e) => setParkedInterval(Number(e.target.value))}
+                        <input type="range" min={300} max={7200} step={300} value={editForms[v.id]?.parkedInterval ?? 1800}
+                          onChange={(e) => setEditForms(prev => ({ ...prev, [v.id]: { ...prev[v.id], parkedInterval: Number(e.target.value) } }))}
                           className="flex-1 accent-iv-cyan min-w-0" />
-                        <span className="text-xs text-iv-cyan font-mono w-14 text-right flex-shrink-0">{intervalLabel(parkedInterval)}</span>
+                        <span className="text-xs text-iv-cyan font-mono w-14 text-right flex-shrink-0">{intervalLabel(editForms[v.id]?.parkedInterval ?? 1800)}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-iv-muted w-28 flex-shrink-0">WLTP Range (km)</span>
@@ -520,8 +524,8 @@ export default function SettingsPage() {
                           min={1}
                           max={2000}
                           step={1}
-                          value={wltpRange}
-                          onChange={(e) => setWltpRange(e.target.value)}
+                          value={editForms[v.id]?.wltpRange ?? ""}
+                          onChange={(e) => setEditForms(prev => ({ ...prev, [v.id]: { ...prev[v.id], wltpRange: e.target.value } }))}
                           placeholder="e.g. 510"
                           className="flex-1 min-w-0 rounded bg-iv-surface border border-iv-border px-2 py-1 text-xs text-iv-text placeholder:text-iv-muted/50 outline-none focus:border-iv-green/50"
                         />
@@ -532,8 +536,8 @@ export default function SettingsPage() {
                         <input
                           type="text"
                           maxLength={2}
-                          value={countryCode}
-                          onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
+                          value={editForms[v.id]?.countryCode ?? ""}
+                          onChange={(e) => setEditForms(prev => ({ ...prev, [v.id]: { ...prev[v.id], countryCode: e.target.value.toUpperCase() } }))}
                           placeholder="e.g. LT"
                           className="flex-1 min-w-0 rounded bg-iv-surface border border-iv-border px-2 py-1 text-xs text-iv-text placeholder:text-iv-muted/50 outline-none focus:border-iv-green/50 uppercase"
                         />
@@ -550,12 +554,17 @@ export default function SettingsPage() {
                     <button
                       onClick={() => {
                         setEditingInterval(v.id);
-                        setActiveInterval(v.active_interval_seconds);
-                        setParkedInterval(v.parked_interval_seconds);
-                        setCollectionEnabled(v.collection_enabled ?? true);
-                        setIncognitoMode(v.incognito_mode ?? false);
-                        setWltpRange(v.wltp_range_km != null ? String(v.wltp_range_km) : "");
-                        setCountryCode(v.country_code || "");
+                        setEditForms(prev => ({
+                          ...prev,
+                          [v.id]: {
+                            activeInterval: v.active_interval_seconds,
+                            parkedInterval: v.parked_interval_seconds,
+                            collectionEnabled: v.collection_enabled ?? true,
+                            incognitoMode: v.incognito_mode ?? false,
+                            wltpRange: v.wltp_range_km != null ? String(v.wltp_range_km) : "",
+                            countryCode: v.country_code || ""
+                          }
+                        }));
                       }}
                       className="text-xs text-iv-muted hover:text-iv-text transition-colors text-left"
                     >
