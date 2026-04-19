@@ -621,25 +621,25 @@ export default function SettingsPage() {
 
       {/* Change Password */}
       <SectionCard icon={KeyRound} title="Change Password">
-        <div className="space-y-4">
+        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handlePasswordChange(); }}>
           <div>
             <label htmlFor="pwd-current" className="block text-xs font-medium text-iv-muted mb-1.5">Current Password</label>
-            <input id="pwd-current" type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} placeholder="Enter current password" className={inputClasses} />
+            <input id="pwd-current" type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} placeholder="Enter current password" className={inputClasses} autoComplete="current-password" />
           </div>
           <div>
             <label htmlFor="pwd-new" className="block text-xs font-medium text-iv-muted mb-1.5">New Password</label>
-            <input id="pwd-new" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" className={inputClasses} />
+            <input id="pwd-new" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" className={inputClasses} autoComplete="new-password" />
           </div>
           <div>
             <label htmlFor="pwd-confirm" className="block text-xs font-medium text-iv-muted mb-1.5">Confirm New Password</label>
-            <input id="pwd-confirm" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" className={inputClasses} />
+            <input id="pwd-confirm" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" className={inputClasses} autoComplete="new-password" />
           </div>
           <div className="flex justify-end">
-            <button onClick={handlePasswordChange} disabled={passwordSaving || !oldPassword || !newPassword || !confirmPassword} className={btnPrimaryClasses}>
+            <button type="submit" disabled={passwordSaving || !oldPassword || !newPassword || !confirmPassword} className={btnPrimaryClasses}>
               {passwordSaving ? <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" />Changing...</span> : "Change Password"}
             </button>
           </div>
-        </div>
+        </form>
       </SectionCard>
 
       {/* Two-Factor Authentication */}
