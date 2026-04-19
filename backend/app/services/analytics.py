@@ -202,20 +202,26 @@ async def process_completed_trips_and_charges(user_vehicle_id: UUID) -> None:
                             
                             # Get country code and fetch energy price
                             country_code = getattr(veh, "country_code", "LT")
-                            from app.models.telemetry import EnergyPrice
-                            price_res = await session.execute(
-                                select(EnergyPrice).where(EnergyPrice.country_code == country_code)
+                            from app.models.fuel_price import CountryEconomics
+                            eco_res = await session.execute(
+                                select(CountryEconomics)
+                                .where(CountryEconomics.country_code == country_code)
+                                .order_by(CountryEconomics.date.desc())
+                                .limit(1)
                             )
-                            energy_price = price_res.scalar_one_or_none()
+                            eco_price = eco_res.scalar_one_or_none()
                             
-                            if not energy_price and country_code != "LT":
-                                price_res_fallback = await session.execute(
-                                    select(EnergyPrice).where(EnergyPrice.country_code == "LT")
+                            if not eco_price and country_code != "LT":
+                                eco_res_fallback = await session.execute(
+                                    select(CountryEconomics)
+                                    .where(CountryEconomics.country_code == "LT")
+                                    .order_by(CountryEconomics.date.desc())
+                                    .limit(1)
                                 )
-                                energy_price = price_res_fallback.scalar_one_or_none()
+                                eco_price = eco_res_fallback.scalar_one_or_none()
                             
-                            if energy_price:
-                                open_charge.base_cost_eur = added_kwh * energy_price.electricity_price_eur_kwh
+                            if eco_price and eco_price.electricity_price_kwh_eur:
+                                open_charge.base_cost_eur = added_kwh * float(eco_price.electricity_price_kwh_eur)
                             else:
                                 # Fallback if no energy price found
                                 np_price = await fetch_nordpool_price()

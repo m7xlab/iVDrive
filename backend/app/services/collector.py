@@ -132,14 +132,15 @@ class DataCollector:
             replace_existing=True,
         )
 
-        from app.services.energy import fetch_and_store_energy_prices
+
+
+        from app.scripts.fetch_fuel_prices import fetch_and_store_fuel_prices
         self._scheduler.add_job(
-            fetch_and_store_energy_prices,
+            fetch_and_store_fuel_prices,
             "cron",
-            day_of_week="mon",
-            hour=2,
+            hour=16,
             minute=0,
-            id="fetch_energy_prices",
+            id="fetch_fuel_prices",
             replace_existing=True,
         )
         
@@ -147,14 +148,14 @@ class DataCollector:
         asyncio.create_task(self._initial_energy_prices_check())
 
     async def _initial_energy_prices_check(self) -> None:
-        from app.services.energy import fetch_and_store_energy_prices
-        from app.models.telemetry import EnergyPrice
+        from app.scripts.fetch_fuel_prices import fetch_and_store_fuel_prices
+        from app.models.fuel_price import FuelPrice
         from sqlalchemy import select
         async with async_session() as session:
-            result = await session.execute(select(EnergyPrice).limit(1))
+            result = await session.execute(select(FuelPrice).limit(1))
             if not result.scalar_one_or_none():
-                logger.info("Energy prices table is empty, fetching initial data...")
-                await fetch_and_store_energy_prices()
+                logger.info("Fuel prices table is empty, fetching initial data...")
+                await fetch_and_store_fuel_prices()
 
     async def _watchdog_listen_task(self) -> None:
         """Restart the pub/sub listener task if it has died unexpectedly."""
