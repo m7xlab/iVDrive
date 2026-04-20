@@ -477,7 +477,7 @@ def _apply_time_filters(stmt, date_column, from_date, to_date, limit, skip: int 
         stmt = stmt.where(date_column >= from_date)
     if to_date:
         stmt = stmt.where(date_column <= to_date)
-    return stmt.order_by(date_column.desc(), text('id DESC')).offset(skip).limit(limit)
+    return stmt.order_by(date_column.desc()).offset(skip).limit(limit)
 
 
 def _apply_time_filters_chronological(stmt, date_column, from_date, to_date, limit, skip: int = 0):
@@ -486,7 +486,7 @@ def _apply_time_filters_chronological(stmt, date_column, from_date, to_date, lim
         stmt = stmt.where(date_column >= from_date)
     if to_date:
         stmt = stmt.where(date_column <= to_date)
-    return stmt.order_by(date_column.asc(), text('id ASC')).offset(skip).limit(limit)
+    return stmt.order_by(date_column.asc()).offset(skip).limit(limit)
 
 
 def _merge_bands(
