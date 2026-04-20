@@ -195,11 +195,13 @@ export function TripsDashboard({ vehicleId, dateRange }: TripsDashboardProps) {
 
   // Lazy geocoding
   useEffect(() => {
+    let isMounted = true;
     const newLocations = new Map(locations);
     let changed = false;
 
     const resolve = async () => {
       for (const trip of visibleTrips) {
+        if (!isMounted) break;
         const coords = [
           { lat: trip.start_latitude, lon: trip.start_longitude },
           { lat: trip.destination_latitude, lon: trip.destination_longitude }
@@ -216,6 +218,7 @@ export function TripsDashboard({ vehicleId, dateRange }: TripsDashboardProps) {
               changed = true;
             } else {
               const name = await fetchLocationName(lat, lon);
+              if (!isMounted) break;
               newLocations.set(key, name);
               sessionStorage.setItem(`geo_${key}`, name);
               changed = true;
@@ -223,9 +226,13 @@ export function TripsDashboard({ vehicleId, dateRange }: TripsDashboardProps) {
           }
         }
       }
-      if (changed) setLocations(newLocations);
+      if (isMounted && changed) setLocations(newLocations);
     };
     resolve();
+    
+    return () => {
+      isMounted = false;
+    };
   }, [visibleTrips, fetchLocationName]);
 
   if (loading) {
