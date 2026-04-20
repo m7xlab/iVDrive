@@ -46,7 +46,7 @@ function MapAutoBounds({ trips }: { trips: TripAnalyticsItem[] }) {
         bounds.push(pos[0], pos[1]);
       }
     });
-    if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30] });
+    if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30], animate: false });
   }, [trips, map]);
   return null;
 }
@@ -57,7 +57,7 @@ function MapController({ activeTripId, trips }: { activeTripId: number | null, t
         const activeTrip = trips.find(t => t.trip_id === activeTripId);
         const pos = activeTrip ? getPolylinePositions(activeTrip) : null;
         if (pos) {
-            map.flyTo(pos[0], 13);
+            map.flyTo(pos[0], 13, { animate: false });
         }
     }, [activeTripId, trips, map]);
     return null;
@@ -207,10 +207,19 @@ export function TripsDashboard({ vehicleId, dateRange }: TripsDashboardProps) {
         for (const { lat, lon } of coords) {
           if (lat == null || lon == null) continue;
           const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+          
           if (!newLocations.has(key)) {
-            const name = await fetchLocationName(lat, lon);
-            newLocations.set(key, name);
-            changed = true;
+            // Check session storage first to avoid API calls on refresh
+            const cached = sessionStorage.getItem(`geo_${key}`);
+            if (cached) {
+              newLocations.set(key, cached);
+              changed = true;
+            } else {
+              const name = await fetchLocationName(lat, lon);
+              newLocations.set(key, name);
+              sessionStorage.setItem(`geo_${key}`, name);
+              changed = true;
+            }
           }
         }
       }
