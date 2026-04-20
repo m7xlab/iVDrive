@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 import logging
 import sys
 
+import secrets
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -118,7 +119,7 @@ async def csrf_middleware(request: Request, call_next):
         if request.url.path not in exempt_paths:
             csrf_cookie = request.cookies.get("csrf_token")
             csrf_header = request.headers.get("x-csrf-token")
-            if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+            if not csrf_cookie or not csrf_header or not secrets.compare_digest(csrf_cookie, csrf_header):
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "CSRF token missing or incorrect"}
