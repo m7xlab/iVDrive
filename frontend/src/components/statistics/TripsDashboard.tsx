@@ -179,12 +179,19 @@ export function TripsDashboard({ vehicleId, dateRange }: TripsDashboardProps) {
     return displayTrips.slice(0, visibleCount);
   }, [displayTrips, visibleCount, dateRange]);
 
-  const summary = useMemo(() => ({
-    totalTrips: displayTrips.length,
-    totalDistance: displayTrips.reduce((acc, trip) => acc + (trip.distance_km || 0), 0),
-    totalTime: displayTrips.reduce((acc, trip) => acc + (trip.duration_minutes || 0), 0),
-    avgEfficiency: displayTrips.filter(t => t.efficiency_kwh_100km).reduce((acc, trip, _, arr) => acc + (trip.efficiency_kwh_100km || 0) / arr.length, 0)
-  }), [displayTrips]);
+  const summary = useMemo(() => {
+    const validTrips = displayTrips.filter(t => t.distance_km > 0 && t.kwh_used != null && t.kwh_used > 0);
+    const totalDist = validTrips.reduce((acc, t) => acc + (t.distance_km || 0), 0);
+    const totalKwh = validTrips.reduce((acc, t) => acc + (t.kwh_used || 0), 0);
+    const calculatedEff = totalDist > 0 ? (totalKwh / totalDist) * 100 : 0;
+
+    return {
+      totalTrips: displayTrips.length,
+      totalDistance: displayTrips.reduce((acc, trip) => acc + (trip.distance_km || 0), 0),
+      totalTime: displayTrips.reduce((acc, trip) => acc + (trip.duration_minutes || 0), 0),
+      avgEfficiency: calculatedEff
+    };
+  }, [displayTrips]);
 
   // Lazy geocoding
   useEffect(() => {
