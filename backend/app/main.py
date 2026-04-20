@@ -102,6 +102,29 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+@app.middleware("http")
+async def csrf_middleware(request: Request, call_next):
+    if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
+        exempt_paths = [
+            "/api/v1/auth/login",
+            "/api/v1/auth/refresh",
+            "/api/v1/auth/login/verify-2fa",
+            "/api/v1/auth/login/verify-recovery-code",
+            "/api/v1/auth/register",
+            "/api/v1/auth/forgot-password",
+            "/api/v1/auth/reset-password",
+            "/api/v1/auth/invite-request"
+        ]
+        if request.url.path not in exempt_paths:
+            csrf_cookie = request.cookies.get("csrf_token")
+            csrf_header = request.headers.get("x-csrf-token")
+            if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF token missing or incorrect"}
+                )
+    return await call_next(request)
+
 app.add_middleware(CacheMiddleware)
 
 app.add_middleware(
