@@ -140,10 +140,16 @@ export async function apiFetch(
     const cached = requestCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       // Return a mocked Response object wrapped around the cached JSON
-      return new Response(JSON.stringify(cached.data), {
+      const res = new Response(JSON.stringify(cached.data), {
         status: 200,
+        statusText: "OK",
         headers: { "Content-Type": "application/json" },
       });
+      // Force ok property in case polyfills miss it
+      if (!('ok' in res)) {
+        Object.defineProperty(res, 'ok', { get: () => true });
+      }
+      return res;
     }
   }
 
