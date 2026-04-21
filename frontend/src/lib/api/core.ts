@@ -88,16 +88,11 @@ export function invalidateApiCache(vehicleId?: string) {
   }
   const matchString = `/api/v1/vehicles/${vehicleId}`;
   for (const key of requestCache.keys()) {
-    try {
-      // Safely parse regardless of relative/absolute API_BASE
-      const url = new URL(key, "http://localhost");
-      if (url.pathname === matchString || url.pathname.startsWith(`${matchString}/`)) {
-        requestCache.delete(key);
-      }
-    } catch {
-      if (key.includes(matchString)) {
-        requestCache.delete(key);
-      }
+    // Using a simple substring match ensures environment-agnostic cache invalidation.
+    // It cleanly avoids hardcoded origins (like localhost) and robustly handles 
+    // both relative paths and absolute URLs across Docker, Helm, or production edge nodes.
+    if (key.includes(matchString)) {
+      requestCache.delete(key);
     }
   }
 }
@@ -140,10 +135,16 @@ export async function apiFetch(
     const cached = requestCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       // Return a mocked Response object wrapped around the cached JSON
-      return new Response(JSON.stringify(cached.data), {
+      const res = new Response(JSON.stringify(cached.data), {
         status: 200,
+        statusText: "OK",
         headers: { "Content-Type": "application/json" },
       });
+      // Force ok property in case polyfills miss it
+      if (!('ok' in res)) {
+        Object.defineProperty(res, 'ok', { get: () => true });
+      }
+      return res;
     }
   }
 

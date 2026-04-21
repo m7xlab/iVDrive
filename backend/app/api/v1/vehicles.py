@@ -754,7 +754,7 @@ async def get_trips_analytics(
     """
     Returns trip analytics data from the v_trip_analytics view.
     """
-    from sqlalchemy import select, column
+    from sqlalchemy import select, text, column
     await _get_user_vehicle(vehicle_id, user, db)
 
     stmt = (
