@@ -796,7 +796,7 @@ async def get_hvac_isolation(
         temp = r.avg_temp_celsius
         duration_h = (r.end_date - r.start_date).total_seconds() / 3600.0
         
-        if duration_h <= 0:
+        if duration_h <= 0 or dist <= 0:
             continue
             
         speed = dist / duration_h

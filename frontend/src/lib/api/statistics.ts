@@ -199,5 +199,10 @@ export const statisticsApi = {
   async getAdvancedAnalyticsOverview(id: string) {
     const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/advanced-overview`);
     return res.json();
+  },
+
+  async getHVACIsolation(id: string) {
+    const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/hvac-isolation`);
+    return res.json();
   }
 };
