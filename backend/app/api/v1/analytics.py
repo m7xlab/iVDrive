@@ -596,7 +596,7 @@ async def get_charging_curve_integrals(
         .where(
             ChargingState.user_vehicle_id == vehicle_id,
             ChargingState.state == "CHARGING",
-            ChargingState.charge_power_kw > 0,
+            ChargingState.charge_power_kw > 15, # Exclude AC charging (<11kW) to prevent jagged drops
             ChargingState.battery_pct.is_not(None)
         )
     )
