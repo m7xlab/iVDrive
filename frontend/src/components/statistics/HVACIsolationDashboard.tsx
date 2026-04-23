@@ -111,11 +111,11 @@ export function HVACIsolationDashboard({ vehicleId }: { vehicleId: string }) {
           </ResponsiveContainer>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="flex flex-wrap justify-center gap-6">
           {data.metrics.map((m) => (
             <div
               key={m.speed_profile}
-              className="bg-white/5 border border-iv-border rounded-xl p-4 flex flex-col justify-between"
+              className="bg-white/5 border border-iv-border rounded-xl p-4 flex flex-col justify-between w-full md:w-[calc(50%-1.5rem)] lg:w-[calc(33.333%-1.5rem)] max-w-md"
             >
               <div>
                 <h4 className="text-iv-accent font-semibold mb-3 capitalize">
