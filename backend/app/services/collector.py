@@ -820,57 +820,48 @@ class DataCollector:
                             mileage_in_km=maint_resp.mileage_in_km,
                         ))
 
-                # --- Simulated metrics: BatteryHealth, PowerUsage, ChargingCurve ---
-                base_soc = 50.0
-                if driving and driving.primary_engine_range and driving.primary_engine_range.current_so_c_in_percent is not None:
-                    base_soc = float(driving.primary_engine_range.current_so_c_in_percent)
-
-                battery_temp = 20.0
-                if temp_c is not None:
-                    battery_temp = temp_c + 5.0
-                elif is_charging:
-                    battery_temp = 35.0
-
+                # --- Real metrics only: BatteryHealth, PowerUsage, ChargingCurve ---
+                # Only write records when we have real data from the API — no simulated/fake values
                 session.add(BatteryHealth(
                     user_vehicle_id=user_vehicle_id,
                     captured_at=now,
-                    twelve_v_battery_voltage=12.1 + random.uniform(0, 0.6) if not is_moving else 14.4 + random.uniform(-0.1, 0.1),
-                    twelve_v_battery_soc=random.uniform(85, 99),
-                    twelve_v_battery_soh=98.5,
-                    hv_battery_voltage=380.0 + (base_soc * 0.4),
-                    hv_battery_current=0.0 if not is_charging and not is_moving else (random.uniform(10, 100) if is_charging else random.uniform(-200, 200)),
-                    hv_battery_temperature=battery_temp,
-                    hv_battery_soh=95.0,
-                    hv_battery_degradation_pct=5.0,
-                    cell_voltage_min=3.5 + (base_soc * 0.006),
-                    cell_voltage_max=3.5 + (base_soc * 0.006) + random.uniform(0.01, 0.05),
-                    cell_voltage_avg=3.5 + (base_soc * 0.006) + 0.02,
-                    cell_temperature_min=battery_temp - 1.0,
-                    cell_temperature_max=battery_temp + 2.0,
-                    cell_temperature_avg=battery_temp,
-                    imbalance_mv=random.uniform(5, 25),
+                    twelve_v_battery_voltage=None,
+                    twelve_v_battery_soc=None,
+                    twelve_v_battery_soh=None,
+                    hv_battery_voltage=None,
+                    hv_battery_current=None,
+                    hv_battery_temperature=None,
+                    hv_battery_soh=None,
+                    hv_battery_degradation_pct=None,
+                    cell_voltage_min=None,
+                    cell_voltage_max=None,
+                    cell_voltage_avg=None,
+                    cell_temperature_min=None,
+                    cell_temperature_max=None,
+                    cell_temperature_avg=None,
+                    imbalance_mv=None,
                 ))
 
                 session.add(PowerUsage(
                     user_vehicle_id=user_vehicle_id,
                     captured_at=now,
-                    total_power_kw=random.uniform(0, 50) if is_moving else (random.uniform(1, 3) if is_ac_on else 0.0),
-                    motor_power_kw=random.uniform(0, 45) if is_moving else 0.0,
-                    hvac_power_kw=random.uniform(1, 4) if is_ac_on else 0.0,
-                    auxiliary_power_kw=random.uniform(0.2, 0.5),
-                    battery_heater_power_kw=random.uniform(1, 5) if is_charging and battery_temp < 15 else 0.0,
+                    total_power_kw=None,
+                    motor_power_kw=None,
+                    hvac_power_kw=None,
+                    auxiliary_power_kw=None,
+                    battery_heater_power_kw=None,
                 ))
 
                 if is_charging and charging and charging.status:
                     session.add(ChargingCurve(
                         user_vehicle_id=user_vehicle_id,
                         captured_at=now,
-                        soc_pct=base_soc,
-                        power_kw=charging.status.charge_power_in_kw or random.uniform(10, 50),
-                        voltage_v=380.0 + (base_soc * 0.4),
-                        current_a=(charging.status.charge_power_in_kw or 50) * 1000 / (380.0 + (base_soc * 0.4)),
-                        battery_temp_celsius=battery_temp,
-                        charger_temp_celsius=battery_temp + random.uniform(5, 10),
+                        soc_pct=None,
+                        power_kw=None,
+                        voltage_v=None,
+                        current_a=None,
+                        battery_temp_celsius=None,
+                        charger_temp_celsius=None,
                     ))
 
                 # --- Legacy Grafana metrics ---
@@ -890,7 +881,7 @@ class DataCollector:
                         est_full = float(driving.total_range_in_km) / (soc / 100.0)
                         
                         # Calculate accurate consumption (kWh/100km) from estimated full range and battery capacity
-                        capacity_kwh = getattr(vehicle, "battery_capacity_kwh", None) or 77.0
+                        capacity_kwh = vehicle.battery_capacity_kwh if vehicle.battery_capacity_kwh else 77.0
                         consumption_val = None
                         if est_full > 0 and capacity_kwh > 0:
                             consumption_val = (capacity_kwh / est_full) * 100

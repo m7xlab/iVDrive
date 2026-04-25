@@ -1376,10 +1376,10 @@ async def get_vampire_drain(
     from app.models.vehicle import UserVehicle
     v_res = await db.execute(select(UserVehicle).where(UserVehicle.id == vehicle_id))
     veh = v_res.scalar_one_or_none()
-    battery_kwh = 1.0
+    battery_kwh = 50.0  # Safe default for EVs if vehicle has no stored capacity
     if veh:
         cap = getattr(veh, "battery_capacity_kwh", None)
-        if cap:
+        if cap and cap > 0:
             battery_kwh = float(cap)
 
     country_code = "LT"
@@ -1673,12 +1673,7 @@ async def get_predictive_soc(
     from app.models.vehicle import UserVehicle
     v_res = await db.execute(select(UserVehicle).where(UserVehicle.id == vehicle_id))
     veh = v_res.scalar_one_or_none()
-    battery_kwh = 1.0
-    if veh:
-        cap = getattr(veh, "battery_capacity_kwh", None)
-        if cap:
-            battery_kwh = float(cap)
-
+    battery_kwh = 50.0  # Safe default for EVs if vehicle has no stored capacity
     charge_res = await db.execute(
         select(ChargingState)
         .where(ChargingState.user_vehicle_id == vehicle_id)
@@ -1687,6 +1682,12 @@ async def get_predictive_soc(
     )
     charge = charge_res.scalar_one_or_none()
     current_soc = float(charge.battery_pct) if charge and charge.battery_pct else 50.0
+    v_res = await db.execute(select(UserVehicle).where(UserVehicle.id == vehicle_id))
+    veh = v_res.scalar_one_or_none()
+    if veh:
+        cap = getattr(veh, "battery_capacity_kwh", None)
+        if cap and cap > 0:
+            battery_kwh = float(cap)
 
     pos_res = await db.execute(
         select(VehiclePosition)
