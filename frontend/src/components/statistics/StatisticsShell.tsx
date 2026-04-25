@@ -5,6 +5,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { subDays, startOfDay, endOfDay } from "date-fns";
 import { cn } from "@/lib/cn";
 import { DateRangePicker, type DateRangeValue } from "@/components/ui/DateRangePicker";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { PulseDashboard } from "./PulseDashboard";
 import { EfficiencyDashboard } from "./EfficiencyDashboard";
@@ -33,74 +34,71 @@ export interface TimelineRange {
   to: Date;
 }
 
-export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
-  const [activeTab, setActiveTab] = useState("car-overview");
+const TABS = [
+  { id: "car-overview",        label: "Car Overview",       icon: "📊" },
+  { id: "pulse",               label: "Live Pulse",         icon: "📡" },
+  { id: "efficiency",          label: "Winter Penalty",      icon: "❄️" },
+  { id: "economics",          label: "Charging Economics",  icon: "⚡" },
+  { id: "trips",               label: "Trips",              icon: "🗺️" },
+  { id: "movement",            label: "Movement",           icon: "🚗" },
+  { id: "driving-stats",       label: "Driving Stats",       icon: "📈" },
+  { id: "charging-stats",      label: "Charging Stats",     icon: "🔌" },
+  { id: "charging-curve",      label: "Charging Curve",     icon: "📉" },
+  { id: "hvac-isolation",      label: "HVAC Isolation",     icon: "🌡️" },
+  { id: "charging-curve-integrals", label: "Curve Int.",    icon: "🔋" },
+  { id: "elevation-penalty",   label: "Elevation",         icon: "⛰️" },
+  { id: "speed-temp-matrix",   label: "Speed × Temp",       icon: "🌡️" },
+  { id: "missed-savings",      label: "Charge Windows",    icon: "💰" },
+  { id: "vampire-drain",       label: "Vampire Drain",       icon: "🧛" },
+  { id: "ice-tco",             label: "ICE vs EV",           icon: "⛽" },
+  { id: "route-efficiency",    label: "Route Efficiency",   icon: "🛣️" },
+  { id: "predictive-soc",      label: "Arrival SoC",         icon: "🎯" },
+  { id: "mileage",             label: "Mileage",             icon: "📍" },
+] as const;
 
-  // Avoid hydration mismatch (#418): server and client must render the same initial state.
-  // new Date() differs between server and client, so we set the real range only in useEffect.
+const TAB_MIN_WIDTH = 120; // px, min width per tab button
+const TAB_GAP = 8;         // px gap between tabs
+
+export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
+  const [activeTab, setActiveTab] = useState<string>("car-overview");
   const [dateRange, setDateRange] = useState<DateRangeValue | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const now = new Date();
-    setDateRange({
-      from: startOfDay(subDays(now, 7)),
-      to: endOfDay(now),
-    });
+    setDateRange({ from: startOfDay(subDays(now, 7)), to: endOfDay(now) });
   }, []);
 
-  const TABS = [
-    { id: "car-overview", label: "Car Overview" },
-    { id: "pulse", label: "Live Pulse" },
-    { id: "efficiency", label: "Winter Penalty" },
-    { id: "economics", label: "Charging Economics" },
-    { id: "trips", label: "Trips" },
-    { id: "movement", label: "Movement" },
-    { id: "driving-stats", label: "Driving Stats" },
-    { id: "charging-stats", label: "Charging Stats" },
-    { id: "charging-curve", label: "Charging Curve" },
-    { id: "hvac-isolation", label: "HVAC Isolation" },
-    { id: "charging-curve-integrals", label: "Curve Int." },
-    { id: "elevation-penalty", label: "Elevation" },
-    { id: "speed-temp-matrix", label: "Speed × Temp" },
-    { id: "missed-savings", label: "Charge Windows" },
-    { id: "vampire-drain", label: "Vampire Drain" },
-    { id: "ice-tco", label: "ICE vs EV" },
-    { id: "route-efficiency", label: "Route Efficiency" },
-    { id: "predictive-soc", label: "Arrival SoC" },
-    { id: "mileage", label: "Mileage" },
-  ];
-
-  const tabListRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const updateScrollArrows = useCallback(() => {
-    const el = tabListRef.current;
+  const scrollIntoView = useCallback((tabId: string) => {
+    const el = scrollRef.current;
     if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 8);
-    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 8);
+    const idx = TABS.findIndex(t => t.id === tabId);
+    if (idx < 0) return;
+    const tabWidth = TAB_MIN_WIDTH + TAB_GAP;
+    const scrollTarget = idx * tabWidth - el.clientWidth / 2 + tabWidth / 2;
+    el.scrollTo({ left: Math.max(0, scrollTarget), behavior: "smooth" });
   }, []);
+
+  const navigate = useCallback((dir: -1 | 1) => {
+    const idx = TABS.findIndex(t => t.id === activeTab);
+    const next = Math.max(0, Math.min(TABS.length - 1, idx + dir));
+    setActiveTab(TABS[next].id);
+  }, [activeTab]);
 
   useEffect(() => {
-    updateScrollArrows();
-    const el = tabListRef.current;
-    el?.addEventListener("scroll", updateScrollArrows, { passive: true });
-    window.addEventListener("resize", updateScrollArrows);
-    return () => {
-      el?.removeEventListener("scroll", updateScrollArrows);
-      window.removeEventListener("resize", updateScrollArrows);
+    // When activeTab changes externally (click), scroll it into view
+    scrollIntoView(activeTab);
+  }, [activeTab, scrollIntoView]);
+
+  // Keyboard left/right navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") navigate(1);
+      if (e.key === "ArrowLeft")  navigate(-1);
     };
-  }, [updateScrollArrows]);
-
-  const scrollBy = (dir: -1 | 1) => {
-    tabListRef.current?.scrollBy({ left: dir * 200, behavior: "smooth" });
-  };
-
-  // Keyboard arrow navigation for desktop
-  const handleTabKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowRight") { e.preventDefault(); scrollBy(1); }
-    if (e.key === "ArrowLeft") { e.preventDefault(); scrollBy(-1); }
-  };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [navigate]);
 
   if (!dateRange) {
     return (
@@ -112,66 +110,86 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
     );
   }
 
-  const range: TimelineRange = {
-    from: dateRange.from,
-    to: dateRange.to,
-  };
+  const range: TimelineRange = { from: dateRange.from, to: dateRange.to };
+  const activeIdx = TABS.findIndex(t => t.id === activeTab);
 
   return (
     <div className="space-y-6">
-      <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <div className="relative flex items-center gap-1">
-            {canScrollLeft && (
+      {/* ── Tab Navigation Card ── */}
+      <div className="glass rounded-2xl border border-iv-border p-3">
+        <div className="flex items-center gap-2">
+          {/* Left arrow */}
+          <button
+            onClick={() => navigate(-1)}
+            disabled={activeIdx === 0}
+            className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border border-iv-border text-iv-muted hover:text-iv-text hover:bg-iv-charcoal transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+            aria-label="Previous tab"
+          >
+            <ChevronLeft size={18} />
+          </button>
+
+          {/* Tab strip */}
+          <div
+            ref={scrollRef}
+            className="flex flex-1 gap-2 overflow-x-auto no-scrollbar scroll-smooth snap-x snap-mandatory"
+            style={{ paddingBottom: "2px" }}
+          >
+            {TABS.map((t, i) => (
               <button
-                onClick={() => scrollBy(-1)}
-                className="shrink-0 rounded-lg px-1.5 py-2 text-sm text-iv-muted hover:text-iv-text hover:bg-iv-surface border border-iv-border transition-all"
-                aria-label="Scroll tabs left"
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={cn(
+                  "shrink-0 snap-start rounded-xl px-4 py-2.5 text-[13px] font-semibold transition-all flex items-center gap-2 border",
+                  activeTab === t.id
+                    ? "bg-iv-charcoal text-iv-cyan border-iv-border shadow-sm"
+                    : "bg-iv-surface text-iv-text-muted border-transparent hover:border-iv-border/60 hover:text-iv-text"
+                )}
+                style={{ minWidth: `${TAB_MIN_WIDTH}px` }}
               >
-                ‹
+                <span className="text-base">{t.icon}</span>
+                <span>{t.label}</span>
               </button>
-            )}
-            <Tabs.List
-              ref={tabListRef}
-              onKeyDown={handleTabKeyDown}
-              className="flex flex-nowrap gap-1.5 rounded-xl bg-iv-surface p-1.5 border border-iv-border w-full md:w-auto overflow-x-auto no-scrollbar scroll-smooth"
-              style={{ scrollPaddingLeft: "0.5rem", scrollPaddingRight: "0.5rem" }}
-            >
-              {TABS.map((t) => (
-                <Tabs.Trigger
-                  key={t.id}
-                  value={t.id}
-                  className={cn(
-                    "rounded-lg px-3 py-2 text-[13px] font-semibold transition-all shrink-0 whitespace-nowrap",
-                    activeTab === t.id
-                      ? "bg-iv-charcoal text-iv-cyan shadow-sm border border-iv-border"
-                      : "text-iv-text-muted hover:text-iv-text hover:bg-iv-charcoal/40 border border-transparent hover:border-iv-border/50"
-                  )}
-                >
-                  {t.label}
-                </Tabs.Trigger>
-              ))}
-            </Tabs.List>
-            {canScrollRight && (
-              <button
-                onClick={() => scrollBy(1)}
-                className="shrink-0 rounded-lg px-1.5 py-2 text-sm text-iv-muted hover:text-iv-text hover:bg-iv-surface border border-iv-border transition-all"
-                aria-label="Scroll tabs right"
-              >
-                ›
-              </button>
-            )}
+            ))}
           </div>
 
-          <div className="flex items-center gap-3 justify-center md:justify-start self-start md:self-auto">
-            <span className="text-xs font-medium text-iv-text-muted uppercase tracking-wider whitespace-nowrap hidden sm:inline-block">
-              Period
-            </span>
-            <DateRangePicker value={dateRange} onChange={setDateRange} />
-          </div>
+          {/* Right arrow */}
+          <button
+            onClick={() => navigate(1)}
+            disabled={activeIdx === TABS.length - 1}
+            className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border border-iv-border text-iv-muted hover:text-iv-text hover:bg-iv-charcoal transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+            aria-label="Next tab"
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
 
-        <div className="animate-in fade-in duration-500">
+        {/* Dot indicators */}
+        <div className="flex justify-center gap-1.5 mt-2">
+          {TABS.map((t, i) => (
+            <button
+              key={t.id}
+              onClick={() => { setActiveTab(t.id); scrollIntoView(t.id); }}
+              className={cn(
+                "rounded-full transition-all",
+                activeTab === t.id ? "w-5 h-2 bg-iv-cyan" : "w-2 h-2 bg-iv-border hover:bg-iv-text-muted"
+              )}
+              aria-label={`Go to ${t.label}`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Period picker */}
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-medium text-iv-text-muted uppercase tracking-wider whitespace-nowrap hidden sm:inline-block">
+          Period
+        </span>
+        <DateRangePicker value={dateRange} onChange={setDateRange} />
+      </div>
+
+      {/* ── Content ── */}
+      <div className="animate-in fade-in duration-300">
+        <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
           <Tabs.Content value="car-overview">
             <CarOverviewDashboard vehicleId={vehicleId} dateRange={range} />
           </Tabs.Content>
@@ -184,7 +202,6 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
           <Tabs.Content value="economics">
             <ChargingCostsDashboard vehicleId={vehicleId} dateRange={range} />
           </Tabs.Content>
-          
           <Tabs.Content value="trips">
             <TripsDashboard vehicleId={vehicleId} dateRange={range} />
           </Tabs.Content>
@@ -230,8 +247,8 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
           <Tabs.Content value="mileage">
             <MileageKMDashboard vehicleId={vehicleId} dateRange={range} />
           </Tabs.Content>
-        </div>
-      </Tabs.Root>
+        </Tabs.Root>
+      </div>
     </div>
   );
 }
