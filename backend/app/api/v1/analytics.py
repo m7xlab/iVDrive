@@ -31,6 +31,22 @@ async def get_user_vehicle(user_id: UUID, vehicle_id: UUID, db: AsyncSession) ->
         raise HTTPException(status_code=404, detail="Vehicle not found")
     return vehicle
 
+
+def _calibration(vehicle: UserVehicle):
+    """Return per-vehicle efficiency thresholds, falling back to app-level defaults."""
+    return {
+        "charger_power_kw":            vehicle.charger_power_kw             or 22.0,
+        "ice_l_per_100km":             vehicle.ice_l_per_100km              or 8.0,
+        "uphill_kwh_per_100km_per_100m": vehicle.uphill_kwh_per_100km_per_100m or 0.20,
+        "downhill_kwh_per_100km_per_100m": vehicle.downhill_kwh_per_100km_per_100m or 0.15,
+        "speed_city_threshold_kmh":    vehicle.speed_city_threshold_kmh    or 50.0,
+        "speed_highway_threshold_kmh": vehicle.speed_highway_threshold_kmh or 90.0,
+        "temp_cold_max_celsius":       vehicle.temp_cold_max_celsius       or 5.0,
+        "temp_optimal_min_celsius":    vehicle.temp_optimal_min_celsius    or 15.0,
+        "temp_optimal_max_celsius":    vehicle.temp_optimal_max_celsius    or 25.0,
+    }
+
+
 @router.get("/{vehicle_id}/analytics/efficiency")
 async def get_efficiency_curve(
     vehicle_id: UUID,
@@ -813,8 +829,15 @@ async def get_hvac_isolation(
 ):
     """
     Analyzes trips with similar speeds to isolate the kWh cost of heating/cooling.
+    Uses per-vehicle speed and temperature thresholds from calibration.
     """
-    await get_user_vehicle(user.id, vehicle_id, db)
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    city_thresh = cal["speed_city_threshold_kmh"]
+    hw_thresh = cal["speed_highway_threshold_kmh"]
+    cold_max = cal["temp_cold_max_celsius"]
+    opt_min = cal["temp_optimal_min_celsius"]
+    opt_max = cal["temp_optimal_max_celsius"]
     
     stmt = select(
         Trip.distance_km,
@@ -858,15 +881,15 @@ async def get_hvac_isolation(
         eff = (kwh / dist) * 100.0
         
         s_cat = "mixed"
-        if speed < 50:
+        if speed < city_thresh:
             s_cat = "city"
-        elif speed > 90:
+        elif speed > hw_thresh:
             s_cat = "highway"
-            
+
         t_cat = None
-        if temp <= 5:
+        if temp <= cold_max:
             t_cat = "cold"
-        elif 15 <= temp <= 25:
+        elif opt_min <= temp <= opt_max:
             t_cat = "optimal"
             
         if t_cat:
@@ -885,7 +908,7 @@ async def get_hvac_isolation(
             
             results.append({
                 "speed_profile": s_cat,
-                "avg_speed_desc": "0-50 km/h" if s_cat == "city" else "50-90 km/h" if s_cat == "mixed" else "90+ km/h",
+                "avg_speed_desc": f"0-{city_thresh:.0f} km/h" if s_cat == "city" else f"{city_thresh:.0f}-{hw_thresh:.0f} km/h" if s_cat == "mixed" else "90+ km/h",
                 "cold_trips": len(cold_list),
                 "optimal_trips": len(opt_list),
                 "optimal_kwh_100km": round(avg_opt, 1),
@@ -1053,7 +1076,6 @@ async def _get_nearest_elevation(lat: float, lon: float, vehicle_id: UUID, db: A
 @router.get("/{vehicle_id}/analytics/elevation-penalty")
 async def get_elevation_penalty(
     vehicle_id: UUID,
-    charger_power_kw: float = Query(22.0, description="Charger power in kW for background pre-computation hint"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -1061,8 +1083,10 @@ async def get_elevation_penalty(
     For each trip, calculate elevation gain/loss using OpenTopoData API.
     Uses asyncio.gather for concurrent fetching, with vehicle centroid fallback
     and background-job-style caching for repeated lookups.
+    Uses per-vehicle calibration (uphill/downhill coefficients) with fallback defaults.
     """
-    await get_user_vehicle(user.id, vehicle_id, db)
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
 
     # Fetch all trips in one query
     stmt = select(Trip).where(
@@ -1103,11 +1127,11 @@ async def get_elevation_penalty(
         distance     = trip.distance_km or 1
 
         if elev_change >= 0:
-            uphill_kwh    = round(elev_change * 0.20 / 100 * distance, 3)
+            uphill_kwh    = round(elev_change * cal["uphill_kwh_per_100km_per_100m"] / 100 * distance, 3)
             downhill_kwh = 0.0
         else:
             uphill_kwh    = 0.0
-            downhill_kwh = round(abs(elev_change) * 0.15 / 100 * distance, 3)
+            downhill_kwh = round(abs(elev_change) * cal["downhill_kwh_per_100km_per_100m"] / 100 * distance, 3)
 
         net_kwh = round(uphill_kwh - downhill_kwh, 3)
 
@@ -1485,16 +1509,12 @@ async def get_ice_tco(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Compare per-trip EV cost vs ICE fuel cost at 8.0L/100km."""
-    await get_user_vehicle(user.id, vehicle_id, db)
+    """Compare per-trip EV cost vs ICE fuel cost using per-vehicle ice_l_per_100km calibration."""
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    ice_l_per_100km = cal["ice_l_per_100km"]
 
-    v_res = await db.execute(select(UserVehicle).where(UserVehicle.id == vehicle_id))
-    veh = v_res.scalar_one_or_none()
-    country_code = "LT"
-    if veh:
-        cc = getattr(veh, "country_code", None)
-        if cc:
-            country_code = str(cc)
+    country_code = vehicle.country_code or "LT"
 
     from app.models.fuel_price import FuelPrice, CountryEconomics
 
@@ -1521,8 +1541,6 @@ async def get_ice_tco(
     if fuel and fuel.price_eur_liter:
         petrol_price = float(fuel.price_eur_liter)
 
-    ICE_L_PER_100KM = 8.0
-
     stmt = select(Trip).where(
         Trip.user_vehicle_id == vehicle_id,
         Trip.distance_km.is_not(None),
@@ -1543,7 +1561,7 @@ async def get_ice_tco(
         kwh = trip.kwh_consumed or 0
 
         ev_cost = kwh * elec_price
-        ice_cost = (distance * ICE_L_PER_100KM / 100) * petrol_price
+        ice_cost = (distance * ice_l_per_100km / 100) * petrol_price
         savings = ice_cost - ev_cost
 
         cum_ev += ev_cost
@@ -1571,6 +1589,7 @@ async def get_ice_tco(
             "total_savings_eur": round(cum_ice - cum_ev, 2),
             "electricity_price_eur_kwh": round(elec_price, 4),
             "petrol_price_eur_l": round(petrol_price, 3),
+            "ice_l_per_100km": round(ice_l_per_100km, 1),
         }
     }
 
@@ -1689,6 +1708,12 @@ async def get_predictive_soc(
         if cap and cap > 0:
             battery_kwh = float(cap)
 
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    cold_max = cal["temp_cold_max_celsius"]
+    opt_min = cal["temp_optimal_min_celsius"]
+    opt_max = cal["temp_optimal_max_celsius"]
+
     pos_res = await db.execute(
         select(VehiclePosition)
         .where(VehiclePosition.user_vehicle_id == vehicle_id)
@@ -1731,20 +1756,20 @@ async def get_predictive_soc(
     for trip in trips:
         temp = trip.avg_temp_celsius
         eff = (trip.kwh_consumed / trip.distance_km) * 100.0 if trip.distance_km else 0
-        if temp < 5:
+        if temp < cold_max:
             temps_bucket["cold"].append(eff)
-        elif 5 <= temp < 15:
+        elif cold_max <= temp < opt_min:
             temps_bucket["mild"].append(eff)
-        elif 15 <= temp <= 25:
+        elif opt_min <= temp <= opt_max:
             temps_bucket["optimal"].append(eff)
         else:
             temps_bucket["hot"].append(eff)
 
-    if current_temp < 5:
+    if current_temp < cold_max:
         temp_cat = "cold"
-    elif 5 <= current_temp < 15:
+    elif cold_max <= current_temp < opt_min:
         temp_cat = "mild"
-    elif 15 <= current_temp <= 25:
+    elif opt_min <= current_temp <= opt_max:
         temp_cat = "optimal"
     else:
         temp_cat = "hot"

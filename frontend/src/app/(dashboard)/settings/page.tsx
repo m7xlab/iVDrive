@@ -20,6 +20,7 @@ import {
   Upload,
   Database,
   Sliders,
+  Gauge,
   Monitor,
   RefreshCcw,
   Eye,
@@ -45,6 +46,16 @@ interface SettingsVehicle {
   connector_status: string | null;
   last_fetch_at: string | null;
   created_at: string;
+  // Efficiency calibration
+  charger_power_kw: number | null;
+  ice_l_per_100km: number | null;
+  uphill_kwh_per_100km_per_100m: number | null;
+  downhill_kwh_per_100km_per_100m: number | null;
+  speed_city_threshold_kmh: number | null;
+  speed_highway_threshold_kmh: number | null;
+  temp_cold_max_celsius: number | null;
+  temp_optimal_min_celsius: number | null;
+  temp_optimal_max_celsius: number | null;
 }
 
 interface Geofence {
@@ -411,6 +422,106 @@ export default function SettingsPage() {
               <div className="w-11 h-6 bg-iv-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-iv-green transition-colors"></div>
             </label>
          </div>
+      </SectionCard>
+
+      {/* Efficiency Calibration — shown at top for lazy users to confirm defaults */}
+      <SectionCard icon={Gauge} title="Efficiency Calibration">
+        <div className="space-y-1">
+          <p className="text-xs text-iv-muted mb-4">These values tune analytics calculations (elevation penalty, ICE cost comparison, speed/temperature buckets). Leave as-is to use app defaults, or adjust to match your vehicle&apos;s real behaviour.</p>
+          {vehiclesLoading ? (
+            <div className="flex items-center justify-center py-6"><Loader2 size={20} className="animate-spin text-iv-muted" /></div>
+          ) : vehicles.length === 0 ? (
+            <p className="text-sm text-iv-muted py-4">No vehicles — add one first to configure calibration.</p>
+          ) : (
+            <div className="space-y-4">
+              {vehicles.map((v) => {
+                const defaults = {
+                  charger_power_kw: 22.0,
+                  ice_l_per_100km: 8.0,
+                  uphill_kwh_per_100km_per_100m: 0.20,
+                  downhill_kwh_per_100km_per_100m: 0.15,
+                  speed_city_threshold_kmh: 50.0,
+                  speed_highway_threshold_kmh: 90.0,
+                  temp_cold_max_celsius: 5.0,
+                  temp_optimal_min_celsius: 15.0,
+                  temp_optimal_max_celsius: 25.0,
+                };
+                const f = editForms[v.id] ?? {};
+                const isModified = (key: string) => {
+                  const val = f[key as keyof typeof f];
+                  return val !== undefined && val !== null;
+                };
+                const displayVal = (key: string, decimals = 2) => {
+                  const val = f[key as keyof typeof f] ?? (v as any)[key] ?? (defaults as any)[key];
+                  return val != null ? Number(val).toFixed(decimals) : "—";
+                };
+                return (
+                  <div key={v.id} className="rounded-lg bg-iv-surface border border-iv-border p-3">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Car size={12} className="text-iv-green" />
+                      <span className="text-xs font-medium text-iv-text">
+                        {v.display_name || `${v.manufacturer || ""} ${v.model || ""}`.trim() || "Vehicle"}
+                      </span>
+                      {isModified("charger_power_kw") && <span className="text-[10px] text-iv-yellow ml-1">(custom)</span>}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      {[
+                        { key: "charger_power_kw", label: "Charger Power (kW)", step: "1", min: "1", max: "350", hint: "Max charging speed" },
+                        { key: "ice_l_per_100km", label: "ICE Fuel (L/100km)", step: "0.1", min: "1", max: "20", hint: "For ICE cost comparison" },
+                        { key: "uphill_kwh_per_100km_per_100m", label: "Uphill (kWh/100km/100m)", step: "0.01", min: "0.01", max: "2", hint: "Energy per 100m ascent" },
+                        { key: "downhill_kwh_per_100km_per_100m", label: "Downhill Regen", step: "0.01", min: "0.01", max: "2", hint: "Recovery per 100m descent" },
+                        { key: "speed_city_threshold_kmh", label: "City Speed (km/h)", step: "5", min: "10", max: "150", hint: "Below this = city driving" },
+                        { key: "speed_highway_threshold_kmh", label: "Highway Speed (km/h)", step: "5", min: "50", max: "250", hint: "Above this = highway" },
+                        { key: "temp_cold_max_celsius", label: "Cold Temp (°C)", step: "1", min: "-20", max: "30", hint: "Below this = cold" },
+                        { key: "temp_optimal_min_celsius", label: "Optimal Min (°C)", step: "1", min: "-10", max: "40", hint: "Optimal range start" },
+                        { key: "temp_optimal_max_celsius", label: "Optimal Max (°C)", step: "1", min: "-10", max: "50", hint: "Optimal range end" },
+                      ].map(({ key, label, step, min, max, hint }) => (
+                        <div key={key} className="flex flex-col gap-1">
+                          <span className="text-iv-muted text-[10px] leading-tight">{label}</span>
+                          <input
+                            type="number"
+                            step={step}
+                            min={min}
+                            max={max}
+                            value={displayVal(key, key.includes("threshold") || key.includes("temp") ? 0 : 2)}
+                            onChange={(e) => {
+                              const val = e.target.value === "" ? null : Number(e.target.value);
+                              setEditForms(prev => ({ ...prev, [v.id]: { ...prev[v.id], [key]: val } }));
+                            }}
+                            className="bg-iv-bg border border-iv-border rounded px-2 py-1 text-iv-text text-xs w-full"
+                            title={hint}
+                          />
+                          <span className="text-iv-muted/50 text-[9px]">{hint}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {Object.keys(f).some(k => isModified(k)) && (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={async () => {
+                            const calData: Record<string, number | null> = {};
+                            (Object.keys(defaults) as Array<keyof typeof defaults>).forEach(k => {
+                              const v2 = f[k as keyof typeof f];
+                              if (v2 !== undefined) calData[k] = v2;
+                            });
+                            await api.updateVehicle(v.id, calData);
+                            await loadVehicles();
+                            showToast("success", "Calibration saved");
+                          }}
+                          className="text-xs px-3 py-1.5 rounded bg-iv-green/20 text-iv-green hover:bg-iv-green/30 transition-colors"
+                        >Save for {v.display_name || "this vehicle"}</button>
+                        <button
+                          onClick={() => setEditForms(prev => ({ ...prev, [v.id]: {} }))}
+                          className="text-xs px-3 py-1.5 rounded bg-iv-border/50 text-iv-muted hover:text-iv-text transition-colors"
+                        >Reset</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </SectionCard>
 
       {/* Vehicles */}
