@@ -32,8 +32,8 @@ class Settings(BaseSettings):
 
     # Skoda OAuth — overridable via env
     skoda_base_url: str = "https://mysmob.api.connect.skoda-auto.cz"
-    skoda_auth_client_id: str = "7f045eee-7003-4379-9968-9355ed2adb06@apps_vw-dilab_com"
-    skoda_auth_redirect_uri: str = "myskoda://redirect/login/"
+    skoda_auth_client_id: str | None = None
+    skoda_auth_redirect_uri: str | None = None
     skoda_auth_scope: str = (
         "address badge birthdate cars driversLicense dealers email "
         "mileage mbb nationalIdentifier openid phone profession profile vin"
@@ -89,6 +89,12 @@ class Settings(BaseSettings):
             missing.append("DATABASE_URL (or POSTGRES_USER + POSTGRES_PASSWORD + POSTGRES_DB)")
         if not self.valkey_url:
             missing.append("VALKEY_URL (or VALKEY_PASSWORD)")
+
+        # Skoda OAuth — required for collector to function
+        if not self.skoda_auth_client_id:
+            missing.append("SKODA_AUTH_CLIENT_ID")
+        if not self.skoda_auth_redirect_uri:
+            missing.append("SKODA_AUTH_REDIRECT_URI")
 
         # SMTP — optional; warn if partially configured
         smtp_fields = {
