@@ -18,6 +18,14 @@ import { ChargingStatisticsDashboard } from "./ChargingStatisticsDashboard";
 import { MileageKMDashboard } from "./MileageKMDashboard";
 import { ChargingCurveDashboard } from "./ChargingCurveDashboard";
 import { HVACIsolationDashboard } from "./HVACIsolationDashboard";
+import { ChargingCurveIntegralsDashboard } from "./ChargingCurveIntegralsDashboard";
+import { ElevationPenaltyDashboard } from "./ElevationPenaltyDashboard";
+import { SpeedTempMatrixDashboard } from "./SpeedTempMatrixDashboard";
+import { MissedSavingsDashboard } from "./MissedSavingsDashboard";
+import { VampireDrainDashboard } from "./VampireDrainDashboard";
+import { IceTcoDashboard } from "./IceTcoDashboard";
+import { RouteEfficiencyDashboard } from "./RouteEfficiencyDashboard";
+import { PredictiveSocDashboard } from "./PredictiveSocDashboard";
 
 
 export interface TimelineRange {
@@ -51,6 +59,14 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
     { id: "charging-stats", label: "Charging Stats" },
     { id: "charging-curve", label: "Charging Curve" },
     { id: "hvac-isolation", label: "HVAC Isolation" },
+    { id: "charging-curve-integrals", label: "Charging Curve" },
+    { id: "elevation-penalty", label: "Elevation" },
+    { id: "speed-temp-matrix", label: "Speed × Temp" },
+    { id: "missed-savings", label: "Charge Windows" },
+    { id: "vampire-drain", label: "Vampire Drain" },
+    { id: "ice-tco", label: "ICE vs EV" },
+    { id: "route-efficiency", label: "Route Efficiency" },
+    { id: "predictive-soc", label: "Arrival SoC" },
 
     { id: "mileage", label: "Mileage" },
   ];
@@ -130,6 +146,30 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
           </Tabs.Content>
           <Tabs.Content value="hvac-isolation">
             <HVACIsolationDashboard vehicleId={vehicleId} dateRange={range} />
+          </Tabs.Content>
+          <Tabs.Content value="charging-curve-integrals">
+            <ChargingCurveIntegralsDashboard vehicleId={vehicleId} dateRange={range} />
+          </Tabs.Content>
+          <Tabs.Content value="elevation-penalty">
+            <ElevationPenaltyDashboard vehicleId={vehicleId} />
+          </Tabs.Content>
+          <Tabs.Content value="speed-temp-matrix">
+            <SpeedTempMatrixDashboard vehicleId={vehicleId} />
+          </Tabs.Content>
+          <Tabs.Content value="missed-savings">
+            <MissedSavingsDashboard vehicleId={vehicleId} />
+          </Tabs.Content>
+          <Tabs.Content value="vampire-drain">
+            <VampireDrainDashboard vehicleId={vehicleId} />
+          </Tabs.Content>
+          <Tabs.Content value="ice-tco">
+            <IceTcoDashboard vehicleId={vehicleId} />
+          </Tabs.Content>
+          <Tabs.Content value="route-efficiency">
+            <RouteEfficiencyDashboard vehicleId={vehicleId} />
+          </Tabs.Content>
+          <Tabs.Content value="predictive-soc">
+            <PredictiveSocDashboard vehicleId={vehicleId} />
           </Tabs.Content>
           <Tabs.Content value="mileage">
             <MileageKMDashboard vehicleId={vehicleId} dateRange={range} />

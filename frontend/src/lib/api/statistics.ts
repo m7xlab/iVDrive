@@ -208,5 +208,48 @@ export const statisticsApi = {
     if (opts?.limit != null) params.set("limit", String(opts.limit));
     const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/hvac-isolation?${params.toString()}`);
     return res.json();
+  },
+
+  async getChargingCurveIntegralsV2(id: string, opts?: { fromDate?: string; toDate?: string }) {
+    const params = new URLSearchParams();
+    if (opts?.fromDate) params.set("from_date", opts.fromDate);
+    if (opts?.toDate) params.set("to_date", opts.toDate);
+    const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/charging-curve-integrals-v2?${params.toString()}`);
+    return res.json();
+  },
+
+  async getElevationPenalty(id: string) {
+    const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/elevation-penalty`);
+    return res.json();
+  },
+
+  async getSpeedTempMatrix(id: string) {
+    const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/speed-temp-matrix`);
+    return res.json();
+  },
+
+  async getMissedSavings(id: string) {
+    const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/missed-savings`);
+    return res.json();
+  },
+
+  async getVampireDrain(id: string) {
+    const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/vampire-drain`);
+    return res.json();
+  },
+
+  async getIceTco(id: string) {
+    const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/ice-tco`);
+    return res.json();
+  },
+
+  async getRouteEfficiency(id: string) {
+    const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/route-efficiency`);
+    return res.json();
+  },
+
+  async getPredictiveSoc(id: string) {
+    const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/predictive-soc`);
+    return res.json();
   }
 };
