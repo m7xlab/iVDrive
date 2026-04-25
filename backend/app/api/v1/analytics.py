@@ -1161,7 +1161,7 @@ async def get_speed_temp_matrix(
     )
 
     res = await db.execute(stmt)
-    trips = res.fetchall()
+    trips = res.scalars().all()
 
     matrix: dict[str, dict[str, list[float]]] = {
         "city": {"cold": [], "mild": [], "optimal": [], "hot": []},
@@ -1400,46 +1400,62 @@ async def get_vampire_drain(
     if eco and eco.electricity_price_kwh_eur:
         elec_price = float(eco.electricity_price_kwh_eur)
 
-    # Analyze CONNECT_CABLE intervals for real vampire drain
-    # Filter: car is plugged in (not driving), parked long enough, SoC drop <= 15%
-    # Cap rate at 0.15%/hr to exclude abnormal events
-    # Use MEDIAN to avoid skew from outliers
+    # Analyze vehicle_states for PARKED sessions to calculate SoC drain rate
+    stmt_vs = (
+        select(VehicleState)
+        .where(VehicleState.user_vehicle_id == vehicle_id)
+        .order_by(VehicleState.first_date)
+        .limit(500)
+    )
+    vs_res = await db.execute(stmt_vs)
+    vs_records = vs_res.scalars().all()
+
+    # Also get charging states for battery_pct
     stmt_cs = (
         select(ChargingState)
         .where(ChargingState.user_vehicle_id == vehicle_id)
-        .where(ChargingState.state == "CONNECT_CABLE")
-        .where(ChargingState.battery_pct.isnot(None))
+        .where(ChargingState.battery_pct.is_not(None))
         .order_by(ChargingState.first_date)
         .limit(500)
     )
     cs_res = await db.execute(stmt_cs)
     cs_records = cs_res.scalars().all()
 
-    drain_rates: list[float] = []
-    for i in range(1, len(cs_records)):
-        r0 = cs_records[i - 1]
-        r1 = cs_records[i]
-        dur = (r1.first_date - r0.first_date).total_seconds() / 3600.0
-        if dur <= 0:
-            continue
-        dsoc = float(r0.battery_pct) - float(r1.battery_pct)
-        # Real vampire drain: parked 1-48h, drop 0-15%, rate capped at 0.15%/hr
-        if 1.0 <= dur <= 48 and 0 <= dsoc <= 15:
-            rate = dsoc / dur
-            if rate <= 0.15:  # cap: real standby drain max ~0.15%/hr
-                drain_rates.append(rate)
+    # Build a time-series: (timestamp, battery_pct, state) from charging_states
+    soc_timeline: list[tuple[datetime, int, str]] = []
+    for rec in cs_records:
+        if rec.first_date and rec.battery_pct is not None:
+            soc_timeline.append((rec.first_date, int(rec.battery_pct), rec.state or ""))
+
+    # Calculate drain from SoC timeline: CONNECT_CABLE -> CONNECT_CABLE only
+    # Filter to realistic vampire drain: < 0.15%/hr, dsoc < 15%, dt 1-72h
+    soc_drain_rates: list[float] = []
+    for i in range(1, len(soc_timeline)):
+        t0, soc0, s0 = soc_timeline[i - 1]
+        t1, soc1, s1 = soc_timeline[i]
+        dt_h = (t1 - t0).total_seconds() / 3600.0
+        dsoc = float(soc0) - float(soc1)
+        # Only CONNECT_CABLE->CONNECT_CABLE transitions (plugged in, not driving)
+        # and realistic drain rates (< 0.15%/hr = ~3.6%/day max for real vampire drain)
+        if s0 == "CONNECT_CABLE" and s1 == "CONNECT_CABLE":
+            if dt_h > 1.0 and dt_h < 72 and 0 < dsoc < 15:
+                rate = dsoc / dt_h
+                if rate < 0.15:  # exclude driving / abnormal drain
+                    soc_drain_rates.append(rate)
 
     avg_pct_per_hour = 0.0
-    if drain_rates:
-        sorted_rates = sorted(drain_rates)
-        n = len(sorted_rates)
-        if n % 2 == 0:
-            avg_pct_per_hour = (sorted_rates[n // 2 - 1] + sorted_rates[n // 2]) / 2.0
-        else:
-            avg_pct_per_hour = sorted_rates[n // 2]
+    if soc_drain_rates:
+        # Use median of realistic rates to avoid skew from long parked sessions
+        sorted_rates = sorted(soc_drain_rates)
+        mid = len(sorted_rates) // 2
+        median_rate = sorted_rates[mid] if len(sorted_rates) % 2 == 1 else (
+            sorted_rates[mid - 1] + sorted_rates[mid]
+        ) / 2
+        # Use median rather than mean to avoid skew from long-parked outliers
+        avg_pct_per_hour = median_rate
 
     if avg_pct_per_hour <= 0:
-        avg_pct_per_hour = 0.108  # ~2.6%/day default (realistic EV standby)
+        avg_pct_per_hour = 0.05  # ~1.2%/day default fallback
 
     drain_pct_per_day = avg_pct_per_hour * 24
     drain_kwh_per_day = battery_kwh * drain_pct_per_day / 100
@@ -1698,7 +1714,7 @@ async def get_predictive_soc(
     ).order_by(Trip.start_date.desc()).limit(100)
 
     res = await db.execute(stmt)
-    trips = res.fetchall()
+    trips = res.scalars().all()
 
     if not trips:
         return {
