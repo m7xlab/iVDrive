@@ -1428,35 +1428,46 @@ async def get_vampire_drain(
     if eco and eco.electricity_price_kwh_eur:
         elec_price = float(eco.electricity_price_kwh_eur)
 
-    # Analyze BatteryHealth for SoC changes over time
-    stmt_bh = (
-        select(BatteryHealth)
-        .where(BatteryHealth.user_vehicle_id == vehicle_id)
-        .order_by(BatteryHealth.captured_at)
+    # Analyze CONNECT_CABLE intervals for real vampire drain
+    # Filter: car is plugged in (not driving), parked long enough, SoC drop <= 15%
+    # Cap rate at 0.15%/hr to exclude abnormal events
+    # Use MEDIAN to avoid skew from outliers
+    stmt_cs = (
+        select(ChargingState)
+        .where(ChargingState.user_vehicle_id == vehicle_id)
+        .where(ChargingState.state == "CONNECT_CABLE")
+        .where(ChargingState.battery_pct.isnot(None))
+        .order_by(ChargingState.first_date)
         .limit(500)
     )
-    bh_res = await db.execute(stmt_bh)
-    bh_records = bh_res.scalars().all()
+    cs_res = await db.execute(stmt_cs)
+    cs_records = cs_res.scalars().all()
 
-    soc_changes: list[tuple[float, float]] = []
-    for i in range(1, len(bh_records)):
-        r0 = bh_records[i - 1]
-        r1 = bh_records[i]
-        dur = (r1.captured_at - r0.captured_at).total_seconds() / 3600.0
-        soc_change = 0.0
-        if (r0.hv_battery_soc is not None and r1.hv_battery_soc is not None
-                and r0.hv_battery_soc > 0 and r1.hv_battery_soc > 0):
-            soc_change = float(r0.hv_battery_soc) - float(r1.hv_battery_soc)
-        if dur > 0.5 and dur < 48 and abs(soc_change) < 10:
-            soc_changes.append((dur, soc_change))
+    drain_rates: list[float] = []
+    for i in range(1, len(cs_records)):
+        r0 = cs_records[i - 1]
+        r1 = cs_records[i]
+        dur = (r1.first_date - r0.first_date).total_seconds() / 3600.0
+        if dur <= 0:
+            continue
+        dsoc = float(r0.battery_pct) - float(r1.battery_pct)
+        # Real vampire drain: parked 1-48h, drop 0-15%, rate capped at 0.15%/hr
+        if 1.0 <= dur <= 48 and 0 <= dsoc <= 15:
+            rate = dsoc / dur
+            if rate <= 0.15:  # cap: real standby drain max ~0.15%/hr
+                drain_rates.append(rate)
 
     avg_pct_per_hour = 0.0
-    if soc_changes:
-        rates = [abs(sc) / d for d, sc in soc_changes if d > 0]
-        avg_pct_per_hour = sum(rates) / len(rates) if rates else 0.0
+    if drain_rates:
+        sorted_rates = sorted(drain_rates)
+        n = len(sorted_rates)
+        if n % 2 == 0:
+            avg_pct_per_hour = (sorted_rates[n // 2 - 1] + sorted_rates[n // 2]) / 2.0
+        else:
+            avg_pct_per_hour = sorted_rates[n // 2]
 
     if avg_pct_per_hour <= 0:
-        avg_pct_per_hour = 0.05  # ~1.2%/day default
+        avg_pct_per_hour = 0.108  # ~2.6%/day default (realistic EV standby)
 
     drain_pct_per_day = avg_pct_per_hour * 24
     drain_kwh_per_day = battery_kwh * drain_pct_per_day / 100
