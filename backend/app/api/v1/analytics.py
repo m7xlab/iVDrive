@@ -600,8 +600,10 @@ async def get_charging_curve_integrals(
     Plot Charging Power (kW) over SoC (%) and calculate the "wasted time"
     (time spent charging from 80% to 100%).
     """
-    await get_user_vehicle(user.id, vehicle_id, db)
-    
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    min_power_filter = cal["charger_power_kw"] * 0.5  # Exclude AC charging (half of vehicle max)
+
     # 1. Curve data: Average Power kW per SoC %
     # Using ChargingState for a more consistent representation across all sessions
     stmt_curve = (
@@ -614,7 +616,7 @@ async def get_charging_curve_integrals(
         .where(
             ChargingState.user_vehicle_id == vehicle_id,
             ChargingState.state == "CHARGING",
-            ChargingState.charge_power_kw > 15, # Exclude AC charging (<11kW) to prevent jagged drops
+            ChargingState.charge_power_kw > min_power_filter,  # Exclude slow AC charging (HC-015)
             ChargingState.battery_pct.is_not(None)
         )
     )
@@ -1296,7 +1298,6 @@ async def get_nordpool_prices() -> dict[str, list[float]]:
 @router.get("/{vehicle_id}/analytics/missed-savings")
 async def get_missed_savings(
     vehicle_id: UUID,
-    charger_power_kw: float = Query(11.0, description="Charger power in kW (default 11kW AC)"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -1304,8 +1305,11 @@ async def get_missed_savings(
     Cross-reference charging sessions with NordPool prices to calculate missed savings.
     Uses realistic energy capacity in cheapest 4h window based on charger_power_kw:
       max_energy_in_4h = charger_power_kw * 4
+    Charger power is read from the vehicle's efficiency calibration settings.
     """
-    await get_user_vehicle(user.id, vehicle_id, db)
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    charger_power_kw = cal["charger_power_kw"]
 
     stmt = select(ChargingSession).where(
         ChargingSession.user_vehicle_id == vehicle_id,
@@ -1479,7 +1483,7 @@ async def get_vampire_drain(
         avg_pct_per_hour = median_rate
 
     if avg_pct_per_hour <= 0:
-        avg_pct_per_hour = 0.05  # ~1.2%/day default fallback
+        avg_pct_per_hour = 0.0  # No assumed vampire drain when no data (HC-026/031)
 
     drain_pct_per_day = avg_pct_per_hour * 24
     drain_kwh_per_day = battery_kwh * drain_pct_per_day / 100
@@ -1723,24 +1727,31 @@ async def get_predictive_soc(
     pos = pos_res.scalar_one_or_none()
     current_temp = float(pos.outside_temp_celsius) if pos and pos.outside_temp_celsius else 10.0
 
-    remaining_range_km = 0.0
-    if charge and charge.remaining_range_m:
-        remaining_range_km = charge.remaining_range_m / 1000.0
-    else:
-        remaining_range_km = (current_soc / 100) * 400
-
-    target_distance_km = min(remaining_range_km, 200.0)
-
-    stmt = select(Trip).where(
+    # Fetch trips early — needed for HC-028 range fallback calculation
+    trips_stmt = select(Trip).where(
         Trip.user_vehicle_id == vehicle_id,
         Trip.distance_km.is_not(None),
         Trip.distance_km > 5,
         Trip.kwh_consumed.is_not(None),
         Trip.avg_temp_celsius.is_not(None)
     ).order_by(Trip.start_date.desc()).limit(100)
+    trips_res = await db.execute(trips_stmt)
+    trips = trips_res.scalars().all()
 
-    res = await db.execute(stmt)
-    trips = res.scalars().all()
+    remaining_range_km = 0.0
+    if charge and charge.remaining_range_m:
+        remaining_range_km = charge.remaining_range_m / 1000.0
+    else:
+        # HC-028: derive fallback range from battery_kwh × avg trip efficiency (km/kWh)
+        if trips and len(trips) > 0:
+            all_effs_km_per_kwh = [100.0 / max((t.kwh_consumed / t.distance_km), 0.1) for t in trips if t.distance_km and t.distance_km > 0]
+            avg_efficiency = sum(all_effs_km_per_kwh) / len(all_effs_km_per_kwh) if all_effs_km_per_kwh else 8.0
+        else:
+            avg_efficiency = 8.0  # default km/kWh fallback
+        remaining_range_km = (current_soc / 100) * battery_kwh * avg_efficiency
+
+    # HC-029: target_distance_km cap — configurable via calibration (charger_power_kw slot)
+    target_distance_km = min(remaining_range_km, cal["charger_power_kw"] * 9.09)  # ~200km default for 22kW
 
     if not trips:
         return {
