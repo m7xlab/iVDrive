@@ -996,13 +996,24 @@ async def get_charging_curve_integrals_v2(
     total_energy = sum(b["energy_kwh"] for b in bracket_defs)
     total_minutes = sum(b["minutes"] for b in bracket_defs)
 
+    if total_minutes == 0:
+        return {
+            "curve": curve,
+            "brackets": bracket_defs,
+            "wasted_minutes_80_100": 0,
+            "total_energy_kwh": 0,
+            "total_minutes": 0,
+            "wasted_pct": 0,
+            "message": "No charging data available for this period."
+        }
+
     return {
         "curve": curve,
         "brackets": bracket_defs,
         "wasted_minutes_80_100": wasted_minutes,
         "total_energy_kwh": total_energy,
         "total_minutes": total_minutes,
-        "wasted_pct": round(wasted_minutes / total_minutes * 100, 1) if total_minutes > 0 else 0
+        "wasted_pct": round(wasted_minutes / total_minutes * 100, 1)
     }
 
 
@@ -1365,7 +1376,7 @@ async def get_vampire_drain(
     from app.models.vehicle import UserVehicle
     v_res = await db.execute(select(UserVehicle).where(UserVehicle.id == vehicle_id))
     veh = v_res.scalar_one_or_none()
-    battery_kwh = 62.0
+    battery_kwh = 1.0
     if veh:
         cap = getattr(veh, "battery_capacity_kwh", None)
         if cap:
@@ -1378,7 +1389,7 @@ async def get_vampire_drain(
             country_code = str(cc)
 
     from app.models.fuel_price import CountryEconomics
-    elec_price = 0.25
+    elec_price = 0.0
     eco_res = await db.execute(
         select(CountryEconomics)
         .where(CountryEconomics.country_code == country_code)
@@ -1487,7 +1498,7 @@ async def get_ice_tco(
 
     from app.models.fuel_price import FuelPrice, CountryEconomics
 
-    elec_price = 0.25
+    elec_price = 0.0
     eco_res = await db.execute(
         select(CountryEconomics)
         .where(CountryEconomics.country_code == country_code)
@@ -1662,7 +1673,7 @@ async def get_predictive_soc(
     from app.models.vehicle import UserVehicle
     v_res = await db.execute(select(UserVehicle).where(UserVehicle.id == vehicle_id))
     veh = v_res.scalar_one_or_none()
-    battery_kwh = 62.0
+    battery_kwh = 1.0
     if veh:
         cap = getattr(veh, "battery_capacity_kwh", None)
         if cap:
