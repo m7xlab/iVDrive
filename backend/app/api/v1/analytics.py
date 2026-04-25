@@ -804,6 +804,8 @@ async def get_advanced_analytics_overview(
 @router.get("/{vehicle_id}/analytics/hvac-isolation")
 async def get_hvac_isolation(
     vehicle_id: UUID,
+    from_date: datetime | None = Query(None),
+    to_date: datetime | None = Query(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -812,17 +814,27 @@ async def get_hvac_isolation(
     """
     await get_user_vehicle(user.id, vehicle_id, db)
     
-    query = text("""
-        SELECT distance_km, kwh_consumed, avg_temp_celsius, start_date, end_date
-        FROM trips
-        WHERE user_vehicle_id = :vid
-          AND distance_km > 2
-          AND kwh_consumed IS NOT NULL AND kwh_consumed > 0
-          AND avg_temp_celsius IS NOT NULL
-          AND end_date IS NOT NULL
-    """)
-    
-    res = await db.execute(query, {"vid": str(vehicle_id)})
+    stmt = select(
+        Trip.distance_km,
+        Trip.kwh_consumed,
+        Trip.avg_temp_celsius,
+        Trip.start_date,
+        Trip.end_date
+    ).where(
+        Trip.user_vehicle_id == vehicle_id,
+        Trip.distance_km > 2,
+        Trip.kwh_consumed.is_not(None),
+        Trip.kwh_consumed > 0,
+        Trip.avg_temp_celsius.is_not(None),
+        Trip.end_date.is_not(None)
+    )
+
+    if from_date:
+        stmt = stmt.where(Trip.start_date >= from_date)
+    if to_date:
+        stmt = stmt.where(Trip.start_date <= to_date)
+        
+    res = await db.execute(stmt)
     rows = res.fetchall()
     
     buckets = {
@@ -837,7 +849,7 @@ async def get_hvac_isolation(
         temp = r.avg_temp_celsius
         duration_h = (r.end_date - r.start_date).total_seconds() / 3600.0
         
-        if duration_h <= 0 or dist <= 0:
+        if duration_h < 0.001 or dist <= 0:
             continue
             
         speed = dist / duration_h
@@ -867,7 +879,7 @@ async def get_hvac_isolation(
             avg_cold = sum(cold_list) / len(cold_list)
             avg_opt = sum(opt_list) / len(opt_list)
             
-            diff = avg_cold - avg_opt
+            diff = max(0, avg_cold - avg_opt)
             
             results.append({
                 "speed_profile": s_cat,
