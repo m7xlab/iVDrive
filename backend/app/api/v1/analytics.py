@@ -1410,44 +1410,41 @@ async def get_vampire_drain(
     cs_res = await db.execute(stmt_cs)
     cs_records = cs_res.scalars().all()
 
-    # Build a time-series: (timestamp, battery_pct) from charging_states
-    soc_timeline: list[tuple[datetime, int]] = []
+    # Build a time-series: (timestamp, battery_pct, state) from charging_states
+    soc_timeline: list[tuple[datetime, int, str]] = []
     for rec in cs_records:
         if rec.first_date and rec.battery_pct is not None:
-            soc_timeline.append((rec.first_date, int(rec.battery_pct)))
+            soc_timeline.append((rec.first_date, int(rec.battery_pct), rec.state or ""))
 
-    # Also check power_usage for parked drain (from power_usage sampled data)
-    stmt_pu = (
-        select(PowerUsage)
-        .where(PowerUsage.user_vehicle_id == vehicle_id)
-        .where(PowerUsage.total_power_kw.is_not(None))
-        .order_by(PowerUsage.captured_at)
-        .limit(500)
-    )
-    pu_res = await db.execute(stmt_pu)
-    pu_records = pu_res.scalars().all()
-
-    # Calculate drain from power_usage while vehicle is supposedly "idle"
-    # Average idle power (aux + hvac when parked) * time = kWh lost
-    idle_powers = [abs(float(r.total_power_kw)) for r in pu_records if r.total_power_kw is not None and float(r.total_power_kw) < 2.0]
-    avg_idle_kw = sum(idle_powers) / len(idle_powers) if idle_powers else 0.15
-
-    # Also try to get drain from SoC timeline (charging_states)
+    # Calculate drain from SoC timeline: CONNECT_CABLE -> CONNECT_CABLE only
+    # Filter to realistic vampire drain: < 0.15%/hr, dsoc < 15%, dt 1-72h
     soc_drain_rates: list[float] = []
     for i in range(1, len(soc_timeline)):
-        t0, soc0 = soc_timeline[i - 1]
-        t1, soc1 = soc_timeline[i]
+        t0, soc0, s0 = soc_timeline[i - 1]
+        t1, soc1, s1 = soc_timeline[i]
         dt_h = (t1 - t0).total_seconds() / 3600.0
         dsoc = float(soc0) - float(soc1)
-        if dt_h > 1.0 and dt_h < 48 and 0 < dsoc < 10:
-            soc_drain_rates.append(dsoc / dt_h)
+        # Only CONNECT_CABLE->CONNECT_CABLE transitions (plugged in, not driving)
+        # and realistic drain rates (< 0.15%/hr = ~3.6%/day max for real vampire drain)
+        if s0 == "CONNECT_CABLE" and s1 == "CONNECT_CABLE":
+            if dt_h > 1.0 and dt_h < 72 and 0 < dsoc < 15:
+                rate = dsoc / dt_h
+                if rate < 0.15:  # exclude driving / abnormal drain
+                    soc_drain_rates.append(rate)
 
     avg_pct_per_hour = 0.0
     if soc_drain_rates:
-        avg_pct_per_hour = sum(soc_drain_rates) / len(soc_drain_rates)
+        # Use median of realistic rates to avoid skew from long parked sessions
+        sorted_rates = sorted(soc_drain_rates)
+        mid = len(sorted_rates) // 2
+        median_rate = sorted_rates[mid] if len(sorted_rates) % 2 == 1 else (
+            sorted_rates[mid - 1] + sorted_rates[mid]
+        ) / 2
+        # Use median rather than mean to avoid skew from long-parked outliers
+        avg_pct_per_hour = median_rate
 
     if avg_pct_per_hour <= 0:
-        avg_pct_per_hour = 0.05  # ~1.2%/day default
+        avg_pct_per_hour = 0.05  # ~1.2%/day default fallback
 
     drain_pct_per_day = avg_pct_per_hour * 24
     drain_kwh_per_day = battery_kwh * drain_pct_per_day / 100
