@@ -1189,7 +1189,7 @@ async def get_speed_temp_matrix(
     )
 
     res = await db.execute(stmt)
-    trips = res.fetchall()
+    trips = res.scalars().all()
 
     matrix: dict[str, dict[str, list[float]]] = {
         "city": {"cold": [], "mild": [], "optimal": [], "hot": []},
@@ -1428,32 +1428,62 @@ async def get_vampire_drain(
     if eco and eco.electricity_price_kwh_eur:
         elec_price = float(eco.electricity_price_kwh_eur)
 
-    # Analyze BatteryHealth for SoC changes over time
-    stmt_bh = (
-        select(BatteryHealth)
-        .where(BatteryHealth.user_vehicle_id == vehicle_id)
-        .order_by(BatteryHealth.captured_at)
+    # Analyze vehicle_states for PARKED sessions to calculate SoC drain rate
+    stmt_vs = (
+        select(VehicleState)
+        .where(VehicleState.user_vehicle_id == vehicle_id)
+        .order_by(VehicleState.first_date)
         .limit(500)
     )
-    bh_res = await db.execute(stmt_bh)
-    bh_records = bh_res.scalars().all()
+    vs_res = await db.execute(stmt_vs)
+    vs_records = vs_res.scalars().all()
 
-    soc_changes: list[tuple[float, float]] = []
-    for i in range(1, len(bh_records)):
-        r0 = bh_records[i - 1]
-        r1 = bh_records[i]
-        dur = (r1.captured_at - r0.captured_at).total_seconds() / 3600.0
-        soc_change = 0.0
-        if (r0.hv_battery_soc is not None and r1.hv_battery_soc is not None
-                and r0.hv_battery_soc > 0 and r1.hv_battery_soc > 0):
-            soc_change = float(r0.hv_battery_soc) - float(r1.hv_battery_soc)
-        if dur > 0.5 and dur < 48 and abs(soc_change) < 10:
-            soc_changes.append((dur, soc_change))
+    # Also get charging states for battery_pct
+    stmt_cs = (
+        select(ChargingState)
+        .where(ChargingState.user_vehicle_id == vehicle_id)
+        .where(ChargingState.battery_pct.is_not(None))
+        .order_by(ChargingState.first_date)
+        .limit(500)
+    )
+    cs_res = await db.execute(stmt_cs)
+    cs_records = cs_res.scalars().all()
+
+    # Build a time-series: (timestamp, battery_pct) from charging_states
+    soc_timeline: list[tuple[datetime, int]] = []
+    for rec in cs_records:
+        if rec.first_date and rec.battery_pct is not None:
+            soc_timeline.append((rec.first_date, int(rec.battery_pct)))
+
+    # Also check power_usage for parked drain (from power_usage sampled data)
+    stmt_pu = (
+        select(PowerUsage)
+        .where(PowerUsage.user_vehicle_id == vehicle_id)
+        .where(PowerUsage.total_power_kw.is_not(None))
+        .order_by(PowerUsage.captured_at)
+        .limit(500)
+    )
+    pu_res = await db.execute(stmt_pu)
+    pu_records = pu_res.scalars().all()
+
+    # Calculate drain from power_usage while vehicle is supposedly "idle"
+    # Average idle power (aux + hvac when parked) * time = kWh lost
+    idle_powers = [abs(float(r.total_power_kw)) for r in pu_records if r.total_power_kw is not None and float(r.total_power_kw) < 2.0]
+    avg_idle_kw = sum(idle_powers) / len(idle_powers) if idle_powers else 0.15
+
+    # Also try to get drain from SoC timeline (charging_states)
+    soc_drain_rates: list[float] = []
+    for i in range(1, len(soc_timeline)):
+        t0, soc0 = soc_timeline[i - 1]
+        t1, soc1 = soc_timeline[i]
+        dt_h = (t1 - t0).total_seconds() / 3600.0
+        dsoc = float(soc0) - float(soc1)
+        if dt_h > 1.0 and dt_h < 48 and 0 < dsoc < 10:
+            soc_drain_rates.append(dsoc / dt_h)
 
     avg_pct_per_hour = 0.0
-    if soc_changes:
-        rates = [abs(sc) / d for d, sc in soc_changes if d > 0]
-        avg_pct_per_hour = sum(rates) / len(rates) if rates else 0.0
+    if soc_drain_rates:
+        avg_pct_per_hour = sum(soc_drain_rates) / len(soc_drain_rates)
 
     if avg_pct_per_hour <= 0:
         avg_pct_per_hour = 0.05  # ~1.2%/day default
@@ -1715,7 +1745,7 @@ async def get_predictive_soc(
     ).order_by(Trip.start_date.desc()).limit(100)
 
     res = await db.execute(stmt)
-    trips = res.fetchall()
+    trips = res.scalars().all()
 
     if not trips:
         return {
