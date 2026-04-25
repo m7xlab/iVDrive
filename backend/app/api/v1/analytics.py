@@ -18,6 +18,17 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+# =============================================================================
+# Calibration & Engineering Constants
+# =============================================================================
+# Used by vampire drain analysis (get_vampire_drain). Edit here to tune thresholds.
+VAMPIRE_DRAIN_DEFAULTS = {
+    "min_parked_hours":    1.0,   # Ignore intervals shorter than this (not real vampire drain)
+    "max_parked_hours":   72.0,   # Ignore intervals longer than this (BMS sleep / abnormal)
+    "max_drain_rate_pct": 0.15,   # Max realistic vampire drain %/hr (exclude abnormal spikes)
+    "max_dsoc_pct":       15.0,   # Max expected SoC drop in one parked interval (exclude outliers)
+}
+
 class ChargingSessionUpdate(BaseModel):
     actual_cost_eur: float
     energy_kwh: float
@@ -1466,9 +1477,10 @@ async def get_vampire_drain(
         # Only CONNECT_CABLE->CONNECT_CABLE transitions (plugged in, not driving)
         # and realistic drain rates (< 0.15%/hr = ~3.6%/day max for real vampire drain)
         if s0 == "CONNECT_CABLE" and s1 == "CONNECT_CABLE":
-            if dt_h > 1.0 and dt_h < 72 and 0 < dsoc < 15:
+            cfg = VAMPIRE_DRAIN_DEFAULTS
+            if cfg["min_parked_hours"] < dt_h < cfg["max_parked_hours"] and 0 < dsoc < cfg["max_dsoc_pct"]:
                 rate = dsoc / dt_h
-                if rate < 0.15:  # exclude driving / abnormal drain
+                if rate < cfg["max_drain_rate_pct"]:
                     soc_drain_rates.append(rate)
 
     avg_pct_per_hour = 0.0
