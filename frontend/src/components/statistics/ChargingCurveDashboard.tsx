@@ -16,6 +16,8 @@ interface Metrics {
   wasted_minutes_80_100: number;
   fast_charge_minutes_0_80: number;
   total_charging_minutes: number;
+  peak_power_kw?: number;
+  avg_power_kw?: number;
 }
 
 interface ChargingCurveData {
@@ -23,7 +25,7 @@ interface ChargingCurveData {
   metrics: Metrics;
 }
 
-export function ChargingCurveDashboard({ vehicleId }: { vehicleId: string }) {
+export function ChargingCurveDashboard({ vehicleId, dateRange }: { vehicleId: string; dateRange?: { from: Date; to: Date } }) {
   const [data, setData] = useState<ChargingCurveData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -33,7 +35,11 @@ export function ChargingCurveDashboard({ vehicleId }: { vehicleId: string }) {
     try {
       // Assuming api.fetchWrapper can be used or just use native fetch if not defined
       const token = localStorage.getItem("access_token");
-      const res = await fetch(`/api/v1/vehicles/${vehicleId}/analytics/charging-curve-integrals`, {
+      let url = `/api/v1/vehicles/${vehicleId}/analytics/charging-curve-integrals`;
+      if (dateRange?.from && dateRange?.to) {
+        url += `?from_date=${dateRange.from.toISOString()}&to_date=${dateRange.to.toISOString()}`;
+      }
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
         signal: controller.signal
       });
@@ -52,7 +58,7 @@ export function ChargingCurveDashboard({ vehicleId }: { vehicleId: string }) {
     }
     
     return controller;
-  }, [vehicleId]);
+  }, [vehicleId, dateRange?.from?.getTime(), dateRange?.to?.getTime()]);
 
   useEffect(() => {
     let activeController: AbortController | null = null;
@@ -89,15 +95,37 @@ export function ChargingCurveDashboard({ vehicleId }: { vehicleId: string }) {
         Charging power across different battery levels (SoC), highlighting the time spent charging the last 20%.
       </p>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="flex items-center gap-4 rounded-lg border border-iv-border bg-iv-surface p-4">
+          <div className="rounded-lg bg-iv-green/15 p-3">
+            <Zap className="h-6 w-6 text-iv-green" />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-iv-muted">Peak Power</p>
+            <p className="text-2xl font-bold text-iv-text">{data.metrics.peak_power_kw || 0} kW</p>
+            <p className="text-xs text-iv-muted">max observed</p>
+          </div>
+        </div>
+
         <div className="flex items-center gap-4 rounded-lg border border-iv-border bg-iv-surface p-4">
           <div className="rounded-lg bg-iv-cyan/15 p-3">
             <Zap className="h-6 w-6 text-iv-cyan" />
           </div>
           <div>
-            <p className="text-xs font-medium text-iv-muted">Fast Charging (0-80%)</p>
+            <p className="text-xs font-medium text-iv-muted">Avg Fast Charging</p>
+            <p className="text-2xl font-bold text-iv-text">{data.metrics.avg_power_kw || 0} kW</p>
+            <p className="text-xs text-iv-muted">across whole curve</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 rounded-lg border border-iv-border bg-iv-surface p-4">
+          <div className="rounded-lg bg-iv-cyan/15 p-3">
+            <Clock className="h-6 w-6 text-iv-cyan" />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-iv-muted">Time (0-80%)</p>
             <p className="text-2xl font-bold text-iv-text">{data.metrics.fast_charge_minutes_0_80} min</p>
-            <p className="text-xs text-iv-muted">average accumulated time</p>
+            <p className="text-xs text-iv-muted">avg time per session</p>
           </div>
         </div>
 
@@ -108,7 +136,7 @@ export function ChargingCurveDashboard({ vehicleId }: { vehicleId: string }) {
           <div>
             <p className="text-xs font-medium text-iv-muted">Time Wasted (80-100%)</p>
             <p className="text-2xl font-bold text-red-400">{data.metrics.wasted_minutes_80_100} min</p>
-            <p className="text-xs text-iv-muted">total accumulated time wasted</p>
+            <p className="text-xs text-iv-muted">avg time wasted per session</p>
           </div>
         </div>
       </div>
