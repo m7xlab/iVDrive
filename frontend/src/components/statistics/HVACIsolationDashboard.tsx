@@ -48,7 +48,7 @@ export function HVACIsolationDashboard({ vehicleId, dateRange }: { vehicleId: st
       }
     };
     fetchHVAC();
-  }, [vehicleId, dateRange?.from?.getTime(), dateRange?.to?.getTime()]);
+  }, [vehicleId, dateRange?.from?.toISOString(), dateRange?.to?.toISOString()]);
 
   if (loading) {
     return (

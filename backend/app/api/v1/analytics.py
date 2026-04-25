@@ -814,24 +814,23 @@ async def get_hvac_isolation(
     """
     await get_user_vehicle(user.id, vehicle_id, db)
     
-    query_str = """
-        SELECT distance_km, kwh_consumed, avg_temp_celsius, start_date, end_date
-        FROM trips
-        WHERE user_vehicle_id = :vid
-          AND distance_km > 2
-          AND kwh_consumed IS NOT NULL AND kwh_consumed > 0
-          AND avg_temp_celsius IS NOT NULL
-          AND end_date IS NOT NULL
-    """
+    conditions = [
+        "user_vehicle_id = :vid",
+        "distance_km > 2",
+        "kwh_consumed IS NOT NULL AND kwh_consumed > 0",
+        "avg_temp_celsius IS NOT NULL",
+        "end_date IS NOT NULL"
+    ]
     params = {"vid": str(vehicle_id)}
 
     if from_date:
-        query_str += " AND start_date >= :from_date"
+        conditions.append("start_date >= :from_date")
         params["from_date"] = from_date
     if to_date:
-        query_str += " AND start_date <= :to_date"
+        conditions.append("start_date <= :to_date")
         params["to_date"] = to_date
 
+    query_str = f"SELECT distance_km, kwh_consumed, avg_temp_celsius, start_date, end_date FROM trips WHERE {' AND '.join(conditions)}"
     query = text(query_str)
     
     res = await db.execute(query, params)
