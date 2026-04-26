@@ -7,8 +7,6 @@ import { cn } from "@/lib/cn";
 import { DateRangePicker, type DateRangeValue } from "@/components/ui/DateRangePicker";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import { PulseDashboard } from "./PulseDashboard";
-import { EfficiencyDashboard } from "./EfficiencyDashboard";
 import { CarOverviewDashboard } from "./CarOverviewDashboard";
 
 import { TripsDashboard } from "./TripsDashboard";
@@ -34,8 +32,6 @@ export interface TimelineRange {
 
 const TABS = [
   { id: "car-overview",        label: "Car Overview",       icon: "📊" },
-  { id: "pulse",               label: "Live Pulse",         icon: "📡" },
-  { id: "efficiency",          label: "Winter Penalty",      icon: "❄️" },
   { id: "trips",               label: "Trips",              icon: "🗺️" },
   { id: "movement",            label: "Movement",           icon: "🚗" },
   { id: "driving-stats",       label: "Driving Stats",       icon: "📈" },
@@ -189,12 +185,6 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
           <Tabs.Content value="car-overview">
             <CarOverviewDashboard vehicleId={vehicleId} dateRange={range} />
           </Tabs.Content>
-          <Tabs.Content value="pulse">
-            <PulseDashboard vehicleId={vehicleId} />
-          </Tabs.Content>
-          <Tabs.Content value="efficiency">
-            <EfficiencyDashboard vehicleId={vehicleId} dateRange={range} />
-          </Tabs.Content>
 
           <Tabs.Content value="trips">
             <TripsDashboard vehicleId={vehicleId} dateRange={range} />
@@ -222,9 +212,6 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
           </Tabs.Content>
           <Tabs.Content value="speed-temp-matrix">
             <SpeedTempMatrixDashboard vehicleId={vehicleId} />
-          </Tabs.Content>
-          <Tabs.Content value="vampire-drain">
-            <VampireDrainDashboard vehicleId={vehicleId} />
           </Tabs.Content>
           <Tabs.Content value="ice-tco">
             <IceTcoDashboard vehicleId={vehicleId} />
