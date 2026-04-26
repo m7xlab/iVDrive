@@ -41,7 +41,6 @@ const TABS = [
   { id: "ice-tco",             label: "ICE vs EV",           icon: "⛽" },
   { id: "route-efficiency",    label: "Route Efficiency",   icon: "🛣️" },
   { id: "predictive-soc",      label: "Arrival SoC",         icon: "🎯" },
-  { id: "mileage",             label: "Mileage",             icon: "📍" },
 ] as const;
 
 const TAB_MIN_WIDTH = 120; // px, min width per tab button
