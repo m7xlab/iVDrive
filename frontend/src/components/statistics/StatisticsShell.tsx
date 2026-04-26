@@ -19,7 +19,6 @@ import { HVACIsolationDashboard } from "./HVACIsolationDashboard";
 import { ChargingCurveIntegralsDashboard } from "./ChargingCurveIntegralsDashboard";
 import { ElevationPenaltyDashboard } from "./ElevationPenaltyDashboard";
 import { SpeedTempMatrixDashboard } from "./SpeedTempMatrixDashboard";
-import { VampireDrainDashboard } from "./VampireDrainDashboard";
 import { IceTcoDashboard } from "./IceTcoDashboard";
 import { RouteEfficiencyDashboard } from "./RouteEfficiencyDashboard";
 import { PredictiveSocDashboard } from "./PredictiveSocDashboard";
@@ -41,7 +40,6 @@ const TABS = [
   { id: "charging-curve-integrals", label: "Curve Int.",    icon: "🔋" },
   { id: "elevation-penalty",   label: "Elevation",         icon: "⛰️" },
   { id: "speed-temp-matrix",   label: "Speed × Temp",       icon: "🌡️" },
-  { id: "vampire-drain",       label: "Vampire Drain",       icon: "🧛" },
   { id: "ice-tco",             label: "ICE vs EV",           icon: "⛽" },
   { id: "route-efficiency",    label: "Route Efficiency",   icon: "🛣️" },
   { id: "predictive-soc",      label: "Arrival SoC",         icon: "🎯" },
