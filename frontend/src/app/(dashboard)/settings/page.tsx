@@ -637,8 +637,9 @@ export default function SettingsPage() {
                           temp_cold_max_celsius: 5.0, temp_optimal_min_celsius: 15.0, temp_optimal_max_celsius: 25.0,
                         };
                         const displayVal = (k: string, d = 2) => {
-                          const val = f[k] ?? (v as unknown as Record<string, unknown>)[k] as number ?? defaults[k];
-                          return val != null ? Number(val).toFixed(d) : "";
+                          const raw = f[k] ?? (v as unknown as Record<string, unknown>)[k] as number ?? defaults[k];
+                          const val = raw == null ? "" : Number(raw).toFixed(d);
+                          return val === "NaN" ? "" : val;
                         };
                         return (
                           <div key={key} className="flex flex-col gap-1">

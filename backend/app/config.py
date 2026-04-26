@@ -92,13 +92,14 @@ class Settings(BaseSettings):
 
         # Skoda OAuth — required for collector to function
         # Only enforce if COLLECTOR_ENABLED is set to true (default behavior unchanged for existing deployments)
-        import os as _os
+        import os as _os  # late import to avoid circular issues with pydantic env loading
         collector_enabled = _os.environ.get("COLLECTOR_ENABLED", "true").lower() in ("true", "1", "yes")
         if collector_enabled:
-            if not self.skoda_auth_client_id:
-                missing.append("SKODA_AUTH_CLIENT_ID")
-            if not self.skoda_auth_redirect_uri:
-                missing.append("SKODA_AUTH_REDIRECT_URI")
+            if not self.skoda_auth_client_id or not self.skoda_auth_redirect_uri:
+                raise ValueError(
+                    "Cannot start collector: SKODA_AUTH_CLIENT_ID and SKODA_AUTH_REDIRECT_URI must be set when COLLECTOR_ENABLED=true. "
+                    "Set them in .env or disable the collector with COLLECTOR_ENABLED=false."
+                )
 
         # SMTP — optional; warn if partially configured
         smtp_fields = {
