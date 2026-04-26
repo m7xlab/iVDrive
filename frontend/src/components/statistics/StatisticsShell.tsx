@@ -223,6 +223,7 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
           <Tabs.Content value="speed-temp-matrix">
             <SpeedTempMatrixDashboard vehicleId={vehicleId} />
           </Tabs.Content>
+          <Tabs.Content value="vampire-drain">
             <VampireDrainDashboard vehicleId={vehicleId} />
           </Tabs.Content>
           <Tabs.Content value="ice-tco">
