@@ -5,10 +5,11 @@ All notable changes to the iVDrive project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-04-25
+## [Unreleased] - 2026-04-26
 
 ### Fixed 🐛
-- **Car Overview Charging Power**: Fixed an indexing bug on the Car Overview dashboard where the "Charging Power (now)" metric card was incorrectly displaying the oldest historical value instead of the current real-time charging power.
+- **Vehicle WLTP Fallback Removed**: Removed hardcoded ENYAQ model/trim-based WLTP range fallbacks from `get_overview_wltp`. Now returns `null` when no user-defined or drive-derived WLTP value exists — frontend already handles null gracefully.
+- **Vehicle country_code Default Removed**: Removed hardcoded `"LT"` default from vehicle creation. Country code is now stored as `null` when not provided; analytics endpoints fall back to `"LT"` for fuel/economics queries.
 - **Analytics API Safety & Alignment**: Addressed several PR Agent findings: added safe division checks for speed calculations, prevented negative HVAC penalty outputs, added strict null-checks to frontend metrics, and fully integrated date filtering into the HVAC Isolation endpoint and dashboard.
 - **Elevation API Reliability**: Replaced OpenTopoData external API calls with direct `vehicle_positions.elevation_m` SQL lookups — eliminates HTTP dependency and works reliably inside Docker.
 - **Vampire Drain Calculation**: Fixed broken calculation that used non-existent `BatteryHealth.hv_battery_soc` field. Now correctly uses `ChargingState` with `state=CONNECT_CABLE` intervals, median instead of mean, drain rate capped at 0.15%/hr to exclude driving consumption.
