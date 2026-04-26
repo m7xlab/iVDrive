@@ -638,18 +638,17 @@ export default function SettingsPage() {
                         };
                         const displayVal = (k: string, d = 2) => {
                           const raw = f[k] ?? (v as unknown as Record<string, unknown>)[k] as number ?? defaults[k];
-                          const val = raw == null ? "" : Number(raw).toFixed(d);
-                          return val === "NaN" ? "" : val;
+                          const val = raw == null ? "" : String(raw);
+                          return val;
                         };
                         return (
                           <div key={key} className="flex flex-col gap-1">
                             <span className="text-iv-muted text-[10px]">{label}</span>
                             <input
                               type="number" step={step} min={min} max={max}
-                              value={displayVal(key, key.includes("threshold") || key.includes("temp") ? 0 : 2)}
+                              value={displayVal(key)}
                               onChange={e => {
-                                const val = e.target.value === "" ? null : Number(e.target.value);
-                                setEditForms(prev => ({ ...prev, [v.id]: { ...prev[v.id], [key]: val } }));
+                                setEditForms(prev => ({ ...prev, [v.id]: { ...prev[v.id], [key]: e.target.value } }));
                               }}
                               className="bg-iv-bg border border-iv-border rounded px-2 py-1.5 text-iv-text text-xs w-full"
                             />
@@ -660,7 +659,7 @@ export default function SettingsPage() {
                     <div className="flex gap-2">
                       <button
                         onClick={async () => {
-                          const f = (editForms[v.id] ?? {}) as unknown as Record<string, number | null>;
+                          const f = (editForms[v.id] ?? {}) as unknown as Record<string, string | number | null>;
                           const defaults: Record<string, number> = {
                             charger_power_kw: 22.0, ice_l_per_100km: 8.0,
                             uphill_kwh_per_100km_per_100m: 0.20, downhill_kwh_per_100km_per_100m: 0.15,
@@ -669,8 +668,11 @@ export default function SettingsPage() {
                           };
                           const calData: Record<string, number | null> = {};
                           Object.keys(defaults).forEach(k => {
-                            const v2 = f[k];
-                            if (v2 !== undefined) calData[k] = v2;
+                            const raw = f[k];
+                            if (raw === undefined) return;
+                            if (raw === "" || raw === null) { calData[k] = null; return; }
+                            const num = Number(raw);
+                            if (!isNaN(num)) calData[k] = num;
                           });
                           await api.updateVehicle(v.id, calData);
                           await loadVehicles();
