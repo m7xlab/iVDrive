@@ -613,10 +613,10 @@ export function CarOverviewDashboard({
         )}
       </div>
 
-      {/* 1. Levels & Range */}
+      {/* ── Levels & Range ── */}
+      <SectionDivider label="Levels & Range" />
       {levelsRangeData.length > 0 && (
         <div className="glass rounded-xl p-5">
-          <>
           <h3 className="text-sm font-medium text-iv-muted mb-4 flex items-center gap-2">
             <Gauge size={14} /> Levels & Range
           </h3>
@@ -768,11 +768,11 @@ export function CarOverviewDashboard({
               )}
             </p>
           )}
-          </>
         </div>
       )}
 
-      {/* 2. Consumption & Range at 100% SoC (Grafana-style: range at 100% + WLTP reference) */}
+      {/* ── Consumption & Range at 100% SoC ── */}
+      <SectionDivider label="Consumption & Range at 100% SoC" />
       <div className="glass rounded-xl p-5">
         <h3 className="text-sm font-medium text-iv-muted mb-4 flex items-center gap-2">
           <TrendingUp size={14} /> Consumption & Range extrapolated to 100% SoC
@@ -907,7 +907,8 @@ export function CarOverviewDashboard({
         )}
       </div>
 
-      {/* 3. Efficiency (Grafana-style: range_estimated_full / wltp * 100 vs 100% reference) */}
+      {/* ── Efficiency ── */}
+      <SectionDivider label="Efficiency" />
       <div className="glass rounded-xl p-5">
         <h3 className="text-sm font-medium text-iv-muted mb-4 flex items-center gap-2">
           <BarChart3 size={14} /> Efficiency
@@ -1008,7 +1009,8 @@ export function CarOverviewDashboard({
         )}
       </div>
 
-      {/* 4. Charging: Power (kW) + Rate (km/h) */}
+      {/* ── Charging Power & Rate ── */}
+      <SectionDivider label="Charging Power" />
       {chargingChartData.length > 0 && (
         <div className="glass rounded-xl p-5">
           <h3 className="text-sm font-medium text-iv-muted mb-4 flex items-center gap-2">
@@ -1126,7 +1128,8 @@ export function CarOverviewDashboard({
 
 
 
-      {/* 5. States Timeline (Gantt-style) */}
+      {/* ── States Timeline ── */}
+      <SectionDivider label="States Timeline" />
       <div className="glass rounded-xl p-5 border border-iv-border">
         <h3 className="text-sm font-medium text-iv-muted mb-4 flex items-center gap-2">
           <Activity size={14} /> States Timeline
@@ -1183,7 +1186,8 @@ export function CarOverviewDashboard({
       </div>
 
       {/* Period summary (existing stats table + bar charts when available) */}
-      {/* ── Winter Penalty Curve ── */}
+      {/* ── Winter Penalty ── */}
+      <SectionDivider label="Winter Penalty" />
       <div className="glass rounded-xl p-5">
         <h3 className="text-sm font-medium text-iv-muted mb-4 flex items-center gap-2">
           <ThermometerSnowflake size={14} /> Winter Penalty
@@ -1240,12 +1244,15 @@ export function CarOverviewDashboard({
       </div>
 
       {/* ── Vampire Drain ── */}
+      <SectionDivider label="Vampire Drain" />
       {vampireDrain && (
         <div className="glass rounded-2xl border border-iv-border p-6">
           <h3 className="text-sm font-medium text-iv-muted flex items-center gap-2 mb-4">
             <Battery size={14} /> Vampire Drain (Parked Standby)
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             {([
               { label: "Drain Rate", value: `${vampireDrain.avg_drain_pct_per_day.toFixed(2)}%/day`, sub: `${(vampireDrain.avg_drain_pct_per_day / 24).toFixed(4)}%/hr`, color: "text-iv-yellow" },
               { label: "Daily Loss", value: `${vampireDrain.drain_kwh_per_day.toFixed(3)} kWh`, sub: `@ ${vampireDrain.electricity_price_eur_kwh}€/kWh`, color: "text-iv-text" },
@@ -1259,13 +1266,37 @@ export function CarOverviewDashboard({
               </div>
             ))}
           </div>
-          <p className="text-sm text-iv-text-muted">
-            <span className="font-bold text-iv-text">{vampireDrain.avg_drain_pct_per_day.toFixed(2)}%</span> of your{" "}
-            <span className="font-bold text-iv-text">{vampireDrain.battery_capacity_kwh} kWh battery</span> is lost daily to vampire drain.
-            Yearly cost: <span className="text-iv-yellow">{(vampireDrain.cost_per_month_eur * 12).toFixed(2)} €</span>.
-          </p>
+
+          {/* Cost breakdown */}
+          <div className="grid grid-cols-3 gap-6 text-center">
+            <div>
+              <p className="text-xs text-iv-text-muted uppercase tracking-wider mb-1">Per Day</p>
+              <p className="text-2xl font-bold text-iv-text">{vampireDrain.cost_per_day_eur.toFixed(2)} €</p>
+              <p className="text-xs text-iv-muted mt-1">{vampireDrain.drain_kwh_per_day.toFixed(3)} kWh lost</p>
+            </div>
+            <div>
+              <p className="text-xs text-iv-text-muted uppercase tracking-wider mb-1">Per Week</p>
+              <p className="text-2xl font-bold text-iv-cyan">{vampireDrain.cost_per_week_eur.toFixed(2)} €</p>
+              <p className="text-xs text-iv-muted mt-1">{vampireDrain.drain_kwh_per_week.toFixed(2)} kWh lost</p>
+            </div>
+            <div>
+              <p className="text-xs text-iv-text-muted uppercase tracking-wider mb-1">Per Month</p>
+              <p className="text-2xl font-bold text-iv-red">{vampireDrain.cost_per_month_eur.toFixed(2)} €</p>
+              <p className="text-xs text-iv-muted mt-1">{vampireDrain.drain_kwh_per_month.toFixed(2)} kWh lost</p>
+            </div>
+          </div>
+          <div className="mt-6 pt-4 border-t border-iv-border">
+            <p className="text-sm text-iv-text-muted">
+              <span className="font-bold text-iv-text">{vampireDrain.avg_drain_pct_per_day.toFixed(2)}% of your {vampireDrain.battery_capacity_kwh} kWh battery</span> is lost
+              per day to vampire drain (systems, standby, etc.).
+              Over a year, this costs approximately <span className="text-iv-yellow">{(vampireDrain.cost_per_month_eur * 12).toFixed(2)} €</span>.
+            </p>
+          </div>
         </div>
       )}
+
+      {/* ── Period Summary ── */}
+      <SectionDivider label="Period Summary" />
 
       {stats.length > 0 && (
         <div className="space-y-4">
