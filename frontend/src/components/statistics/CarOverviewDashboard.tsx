@@ -590,6 +590,8 @@ export function CarOverviewDashboard({
         )}
       </div>
 
+      {/* ── Efficiency Profile Metrics ── */}
+      <SectionDivider label="Efficiency Profile Metrics" />
       <div className="flex flex-wrap items-center gap-2">
         {STATE_TOGGLES.map(({ id, label, icon: Icon }) => (
           <button
