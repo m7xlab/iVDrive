@@ -1183,7 +1183,63 @@ export function CarOverviewDashboard({
       </div>
 
       {/* Period summary (existing stats table + bar charts when available) */}
-      {/* Vampire Drain section — always shown when data available */}
+      {/* ── Winter Penalty Curve ── */}
+      <div className="glass rounded-xl p-5">
+        <h3 className="text-sm font-medium text-iv-muted mb-4 flex items-center gap-2">
+          <ThermometerSnowflake size={14} /> Winter Penalty
+        </h3>
+        {winterEfficiency.length > 0 ? (
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={winterEfficiency} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                <defs>
+                  <linearGradient id="colorWinter" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#00D4FF" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#00D4FF" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="temperature_celsius"
+                  tickFormatter={(v) => `${v}°C`}
+                  stroke="#8b8fa3"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  tickFormatter={(v) => `${v}`}
+                  stroke="#8b8fa3"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  domain={["auto", "auto"]}
+                />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--iv-border)" opacity={0.5} />
+                <Tooltip
+                  formatter={(value: number) => [`${value} kWh/100km`, "Consumption"]}
+                  labelFormatter={(label) => `${label}°C`}
+                  contentStyle={{ backgroundColor: "#1C1C2E", borderColor: "#2a2d42", borderRadius: "12px", color: "#fff" }}
+                  itemStyle={{ color: "#00D4FF", fontWeight: "bold" }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="consumption_kwh_100km"
+                  stroke="#00D4FF"
+                  strokeWidth={2}
+                  fillOpacity={1}
+                  fill="url(#colorWinter)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="h-56 flex items-center justify-center text-iv-muted text-sm">
+            Collecting sufficient trip data to build the winter penalty curve…
+          </div>
+        )}
+      </div>
+
+      {/* ── Vampire Drain ── */}
       {vampireDrain && (
         <div className="glass rounded-2xl border border-iv-border p-6">
           <h3 className="text-sm font-medium text-iv-muted flex items-center gap-2 mb-4">
