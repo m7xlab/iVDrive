@@ -95,11 +95,9 @@ export function ChargingAnalysisDashboard({
 
   // --- KPI cards ---
   const peakPower =
-    data.curve.length > 0
-      ? Math.max(...data.curve.map((d) => d.avg_power_kw))
-      : 0;
+    data.curve?.length ? Math.max(...data.curve.map((d) => d.avg_power_kw)) : 0;
   const avgPower =
-    data.curve.length > 0
+    data.curve?.length
       ? data.curve.reduce((s, d) => s + d.avg_power_kw, 0) / data.curve.length
       : 0;
 
