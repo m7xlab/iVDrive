@@ -1,5 +1,7 @@
+import asyncio
 from datetime import datetime, date, timedelta
 from uuid import UUID
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
@@ -16,6 +18,17 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+# =============================================================================
+# Calibration & Engineering Constants
+# =============================================================================
+# Used by vampire drain analysis (get_vampire_drain). Edit here to tune thresholds.
+VAMPIRE_DRAIN_DEFAULTS = {
+    "min_parked_hours":    1.0,   # Ignore intervals shorter than this (not real vampire drain)
+    "max_parked_hours":   72.0,   # Ignore intervals longer than this (BMS sleep / abnormal)
+    "max_drain_rate_pct": 0.15,   # Max realistic vampire drain %/hr (exclude abnormal spikes)
+    "max_dsoc_pct":       15.0,   # Max expected SoC drop in one parked interval (exclude outliers)
+}
+
 class ChargingSessionUpdate(BaseModel):
     actual_cost_eur: float
     energy_kwh: float
@@ -28,6 +41,22 @@ async def get_user_vehicle(user_id: UUID, vehicle_id: UUID, db: AsyncSession) ->
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
     return vehicle
+
+
+def _calibration(vehicle: UserVehicle):
+    """Return per-vehicle efficiency thresholds, falling back to app-level defaults."""
+    return {
+        "charger_power_kw":            vehicle.charger_power_kw             or 22.0,
+        "ice_l_per_100km":             vehicle.ice_l_per_100km              or 8.0,
+        "uphill_kwh_per_100km_per_100m": vehicle.uphill_kwh_per_100km_per_100m or 0.20,
+        "downhill_kwh_per_100km_per_100m": vehicle.downhill_kwh_per_100km_per_100m or 0.15,
+        "speed_city_threshold_kmh":    vehicle.speed_city_threshold_kmh    or 50.0,
+        "speed_highway_threshold_kmh": vehicle.speed_highway_threshold_kmh or 90.0,
+        "temp_cold_max_celsius":       vehicle.temp_cold_max_celsius       or 5.0,
+        "temp_optimal_min_celsius":    vehicle.temp_optimal_min_celsius    or 15.0,
+        "temp_optimal_max_celsius":    vehicle.temp_optimal_max_celsius    or 25.0,
+    }
+
 
 @router.get("/{vehicle_id}/analytics/efficiency")
 async def get_efficiency_curve(
@@ -67,45 +96,6 @@ async def get_efficiency_curve(
         }
         for row in data
     ]
-
-@router.get("/{vehicle_id}/analytics/charging-costs")
-async def get_charging_costs(
-    vehicle_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Returns cost savings: Base NordPool vs Actual Paid (Public Chargers)."""
-    await get_user_vehicle(user.id, vehicle_id, db)
-    
-    stmt = (
-        select(
-            func.sum(ChargingSession.base_cost_eur).label("total_base_cost"),
-            func.sum(ChargingSession.actual_cost_eur).label("total_actual_cost"),
-            func.sum(ChargingSession.energy_kwh).label("total_kwh"),
-            func.count(ChargingSession.id).label("session_count")
-        )
-        .where(
-            ChargingSession.user_vehicle_id == vehicle_id,
-            ChargingSession.energy_kwh > 0
-        )
-    )
-    
-    result = await db.execute(stmt)
-    row = result.first()
-    
-    if not row:
-        return {"total_base_cost_eur": 0, "total_actual_cost_eur": 0, "total_kwh_added": 0, "markup_paid_eur": 0}
-        
-    base = float(row.total_base_cost or 0)
-    actual = float(row.total_actual_cost or 0)
-    
-    return {
-        "total_sessions": row.session_count or 0,
-        "total_kwh_added": round(float(row.total_kwh or 0), 2),
-        "total_base_cost_eur": round(base, 2),
-        "total_actual_cost_eur": round(actual, 2),
-        "markup_paid_eur": round(actual - base, 2) if actual > 0 else 0
-    }
 
 @router.get("/{vehicle_id}/analytics/charging-sessions")
 async def get_charging_sessions(
@@ -582,8 +572,10 @@ async def get_charging_curve_integrals(
     Plot Charging Power (kW) over SoC (%) and calculate the "wasted time"
     (time spent charging from 80% to 100%).
     """
-    await get_user_vehicle(user.id, vehicle_id, db)
-    
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    min_power_filter = cal["charger_power_kw"] * 0.5  # Exclude AC charging (half of vehicle max)
+
     # 1. Curve data: Average Power kW per SoC %
     # Using ChargingState for a more consistent representation across all sessions
     stmt_curve = (
@@ -596,7 +588,7 @@ async def get_charging_curve_integrals(
         .where(
             ChargingState.user_vehicle_id == vehicle_id,
             ChargingState.state == "CHARGING",
-            ChargingState.charge_power_kw > 15, # Exclude AC charging (<11kW) to prevent jagged drops
+            ChargingState.charge_power_kw > min_power_filter,  # Exclude slow AC charging (HC-015)
             ChargingState.battery_pct.is_not(None)
         )
     )
@@ -811,8 +803,15 @@ async def get_hvac_isolation(
 ):
     """
     Analyzes trips with similar speeds to isolate the kWh cost of heating/cooling.
+    Uses per-vehicle speed and temperature thresholds from calibration.
     """
-    await get_user_vehicle(user.id, vehicle_id, db)
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    city_thresh = cal["speed_city_threshold_kmh"]
+    hw_thresh = cal["speed_highway_threshold_kmh"]
+    cold_max = cal["temp_cold_max_celsius"]
+    opt_min = cal["temp_optimal_min_celsius"]
+    opt_max = cal["temp_optimal_max_celsius"]
     
     stmt = select(
         Trip.distance_km,
@@ -856,15 +855,15 @@ async def get_hvac_isolation(
         eff = (kwh / dist) * 100.0
         
         s_cat = "mixed"
-        if speed < 50:
+        if speed < city_thresh:
             s_cat = "city"
-        elif speed > 90:
+        elif speed > hw_thresh:
             s_cat = "highway"
-            
+
         t_cat = None
-        if temp <= 5:
+        if temp <= cold_max:
             t_cat = "cold"
-        elif 15 <= temp <= 25:
+        elif opt_min <= temp <= opt_max:
             t_cat = "optimal"
             
         if t_cat:
@@ -883,7 +882,7 @@ async def get_hvac_isolation(
             
             results.append({
                 "speed_profile": s_cat,
-                "avg_speed_desc": "0-50 km/h" if s_cat == "city" else "50-90 km/h" if s_cat == "mixed" else "90+ km/h",
+                "avg_speed_desc": f"0-{city_thresh:.0f} km/h" if s_cat == "city" else f"{city_thresh:.0f}-{hw_thresh:.0f} km/h" if s_cat == "mixed" else "90+ km/h",
                 "cold_trips": len(cold_list),
                 "optimal_trips": len(opt_list),
                 "optimal_kwh_100km": round(avg_opt, 1),
@@ -895,4 +894,778 @@ async def get_hvac_isolation(
     return {
         "metrics": results,
         "summary": "Compared cold (≤5°C) vs optimal (15-25°C) temperatures across similar speed profiles to isolate HVAC/heating auxiliary power usage."
+    }
+
+
+# =============================================================================
+# TASK 1: Charging Curve Integrals (v2 using charging_curves table)
+# =============================================================================
+@router.get("/{vehicle_id}/analytics/charging-curve-integrals-v2")
+async def get_charging_curve_integrals_v2(
+    vehicle_id: UUID,
+    from_date: datetime | None = Query(None),
+    to_date: datetime | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Plot Charging Power (kW) over SoC (%) and calculate the 'wasted time'
+    (time spent charging from 80% to 100%). Uses charging_curves table.
+    """
+    await get_user_vehicle(user.id, vehicle_id, db)
+
+    # Curve data: Average Power kW per SoC %
+    stmt_curve = (
+        select(
+            ChargingCurve.soc_pct.label("soc"),
+            func.avg(ChargingCurve.power_kw).label("avg_power"),
+            func.max(ChargingCurve.power_kw).label("max_power"),
+            func.count(ChargingCurve.id).label("samples")
+        )
+        .where(
+            ChargingCurve.user_vehicle_id == vehicle_id,
+            ChargingCurve.power_kw.is_not(None),
+            ChargingCurve.soc_pct.is_not(None)
+        )
+    )
+    if from_date:
+        stmt_curve = stmt_curve.where(ChargingCurve.captured_at >= from_date)
+    if to_date:
+        stmt_curve = stmt_curve.where(ChargingCurve.captured_at <= to_date)
+
+    stmt_curve = stmt_curve.group_by(ChargingCurve.soc_pct).order_by(ChargingCurve.soc_pct)
+    result_curve = await db.execute(stmt_curve)
+    curve_data = result_curve.all()
+
+    curve = [
+        {
+            "soc_pct": round(float(row.soc), 1) if row.soc else 0,
+            "avg_power_kw": round(float(row.avg_power), 2) if row.avg_power else 0,
+            "max_power_kw": round(float(row.max_power), 2) if row.max_power else 0,
+            "samples": row.samples
+        }
+        for row in curve_data
+    ]
+
+    # SoC bracket integrals (0-20, 20-50, 50-80, 80-100)
+    stmt_brackets = (
+        select(
+            func.floor(ChargingCurve.soc_pct / 20).label("bracket"),
+            func.count(ChargingCurve.id).label("count"),
+            func.avg(ChargingCurve.power_kw).label("avg_power"),
+        )
+        .where(
+            ChargingCurve.user_vehicle_id == vehicle_id,
+            ChargingCurve.power_kw.is_not(None),
+            ChargingCurve.soc_pct.is_not(None)
+        )
+    )
+    if from_date:
+        stmt_brackets = stmt_brackets.where(ChargingCurve.captured_at >= from_date)
+    if to_date:
+        stmt_brackets = stmt_brackets.where(ChargingCurve.captured_at <= to_date)
+
+    stmt_brackets = stmt_brackets.group_by("bracket").order_by("bracket")
+    res_brackets = await db.execute(stmt_brackets)
+
+    bracket_map = {row.bracket: row for row in res_brackets.all()}
+
+    bracket_defs = [
+        {"label": "0-20%", "key": 0.0, "energy_kwh": 0.0, "minutes": 0, "samples": 0},
+        {"label": "20-50%", "key": 1.0, "energy_kwh": 0.0, "minutes": 0, "samples": 0},
+        {"label": "50-80%", "key": 2.0, "energy_kwh": 0.0, "minutes": 0, "samples": 0},
+        {"label": "80-100%", "key": 3.0, "energy_kwh": 0.0, "minutes": 0, "samples": 0},
+    ]
+
+    # Estimate: 5-min sampling interval
+    for bd in bracket_defs:
+        row = bracket_map.get(bd["key"])
+        if row:
+            avg_p = float(row.avg_power) if row.avg_power else 0
+            count = row.count or 0
+            bd["energy_kwh"] = round(avg_p * count / 12, 2)
+            bd["minutes"] = round(count * 5)
+            bd["samples"] = count
+
+    wasted_row = bracket_map.get(3.0)
+    wasted_minutes = round(wasted_row.count * 5) if wasted_row and wasted_row.count else 0
+
+    total_energy = sum(b["energy_kwh"] for b in bracket_defs)
+    total_minutes = sum(b["minutes"] for b in bracket_defs)
+
+    if total_minutes == 0:
+        return {
+            "curve": curve,
+            "brackets": bracket_defs,
+            "wasted_minutes_80_100": 0,
+            "total_energy_kwh": 0,
+            "total_minutes": 0,
+            "wasted_pct": 0,
+            "message": "No charging data available for this period."
+        }
+
+    return {
+        "curve": curve,
+        "brackets": bracket_defs,
+        "wasted_minutes_80_100": wasted_minutes,
+        "total_energy_kwh": total_energy,
+        "total_minutes": total_minutes,
+        "wasted_pct": round(wasted_minutes / total_minutes * 100, 1)
+    }
+
+
+# =============================================================================
+# TASK 3: Elevation Penalty & Regen Efficiency
+# =============================================================================
+_elevation_cache: dict[str, float] = {}
+
+
+async def _get_nearest_elevation(lat: float, lon: float, vehicle_id: UUID, db: AsyncSession) -> float | None:
+    """Get elevation from vehicle_positions nearest to given lat/lon."""
+    if lat is None or lon is None:
+        return None
+    try:
+        res = await db.execute(
+            text("""
+                SELECT elevation_m FROM vehicle_positions
+                WHERE user_vehicle_id = :vid
+                  AND elevation_m IS NOT NULL
+                  AND latitude IS NOT NULL
+                  AND longitude IS NOT NULL
+                ORDER BY (
+                    (latitude - :lat)^2 + (longitude - :lon)^2
+                ) ASC
+                LIMIT 1
+            """),
+            {"vid": str(vehicle_id), "lat": lat, "lon": lon}
+        )
+        row = res.first()
+        return float(row[0]) if row else None
+    except Exception:
+        return None
+
+
+@router.get("/{vehicle_id}/analytics/elevation-penalty")
+async def get_elevation_penalty(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    For each trip, calculate elevation gain/loss using OpenTopoData API.
+    Uses asyncio.gather for concurrent fetching, with vehicle centroid fallback
+    and background-job-style caching for repeated lookups.
+    Uses per-vehicle calibration (uphill/downhill coefficients) with fallback defaults.
+    """
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+
+    # Fetch all trips in one query
+    stmt = select(Trip).where(
+        Trip.user_vehicle_id == vehicle_id,
+        Trip.start_lat.is_not(None),
+        Trip.start_lon.is_not(None),
+        Trip.end_lat.is_not(None),
+        Trip.end_lon.is_not(None),
+        Trip.distance_km.is_not(None),
+        Trip.distance_km > 5
+    ).order_by(Trip.start_date.desc()).limit(100)
+
+    res = await db.execute(stmt)
+    trips = res.scalars().all()
+
+    if not trips:
+        return {
+            "trips": [],
+            "summary": {"total_trips": 0, "total_uphill_kwh": 0, "total_downhill_kwh": 0, "net_energy_kwh": 0},
+            "message": "No trips with GPS data available for elevation analysis."
+        }
+
+    # Batch-fetch all elevations using direct SQL (single round-trip per trip, 2 coords)
+    results = []
+    for trip in trips:
+        start_elev = await _get_nearest_elevation(trip.start_lat, trip.start_lon, vehicle_id, db)
+        end_elev   = await _get_nearest_elevation(trip.end_lat,   trip.end_lon,   vehicle_id, db)
+
+        if start_elev is None and end_elev is None:
+            # No elevation data at all for this trip — skip it
+            continue
+
+        # Use 0 as fallback for missing end if start exists (and vice versa)
+        start_elev = start_elev if start_elev is not None else (end_elev or 0)
+        end_elev   = end_elev   if end_elev   is not None else (start_elev or 0)
+
+        elev_change = end_elev - start_elev
+        distance     = trip.distance_km or 1
+
+        if elev_change >= 0:
+            uphill_kwh    = round(elev_change * cal["uphill_kwh_per_100km_per_100m"] / 100 * distance, 3)
+            downhill_kwh = 0.0
+        else:
+            uphill_kwh    = 0.0
+            downhill_kwh = round(abs(elev_change) * cal["downhill_kwh_per_100km_per_100m"] / 100 * distance, 3)
+
+        net_kwh = round(uphill_kwh - downhill_kwh, 3)
+
+        results.append({
+            "trip_id":           trip.id,
+            "start_date":        trip.start_date.isoformat() if trip.start_date else None,
+            "distance_km":       round(distance, 1),
+            "start_elevation_m": start_elev,
+            "end_elevation_m":   end_elev,
+            "elevation_change_m": round(elev_change, 1),
+            "uphill_kwh_per_100km": uphill_kwh,
+            "downhill_kwh_per_100km": downhill_kwh,
+            "net_energy_kwh": net_kwh,
+        })
+
+    uphill_sum   = sum(r["uphill_kwh_per_100km"]    for r in results)
+    downhill_sum = sum(r["downhill_kwh_per_100km"] for r in results)
+
+    return {
+        "trips": results,
+        "summary": {
+            "total_trips":       len(results),
+            "total_uphill_kwh":  round(uphill_sum, 2),
+            "total_downhill_kwh": round(downhill_sum, 2),
+            "net_energy_kwh":    round(uphill_sum - downhill_sum, 2),
+        },
+        "method": "vehicle_positions.elevation_m via nearest-point SQL",
+    }
+
+
+# =============================================================================
+# TASK 4: Ideal Cruising Speed Matrix
+# =============================================================================
+@router.get("/{vehicle_id}/analytics/speed-temp-matrix")
+async def get_speed_temp_matrix(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Speed × Temperature → avg kWh/100km matrix.
+
+    Uses per-vehicle speed and temperature thresholds from calibration.
+    """
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    city_thresh = cal["speed_city_threshold_kmh"]
+    hw_thresh = cal["speed_highway_threshold_kmh"]
+    cold_max = cal["temp_cold_max_celsius"]
+    opt_min = cal["temp_optimal_min_celsius"]
+    opt_max = cal["temp_optimal_max_celsius"]
+
+    stmt = select(Trip).where(
+        Trip.user_vehicle_id == vehicle_id,
+        Trip.distance_km.is_not(None),
+        Trip.distance_km > 2,
+        Trip.kwh_consumed.is_not(None),
+        Trip.kwh_consumed > 0,
+        Trip.avg_temp_celsius.is_not(None),
+        Trip.end_date.is_not(None)
+    )
+
+    res = await db.execute(stmt)
+    trips = res.scalars().all()
+
+    matrix: dict[str, dict[str, list[float]]] = {
+        "city": {"cold": [], "mild": [], "optimal": [], "hot": []},
+        "mixed": {"cold": [], "mild": [], "optimal": [], "hot": []},
+        "highway": {"cold": [], "mild": [], "optimal": [], "hot": []},
+    }
+
+    for trip in trips:
+        duration_h = (trip.end_date - trip.start_date).total_seconds() / 3600.0
+        if duration_h < 0.01:
+            continue
+        speed = trip.distance_km / duration_h
+        temp = trip.avg_temp_celsius
+        eff = (trip.kwh_consumed / trip.distance_km) * 100.0
+
+        s_cat = "mixed"
+        if speed < city_thresh:
+            s_cat = "city"
+        elif speed > hw_thresh:
+            s_cat = "highway"
+
+        t_cat = "mild"
+        if temp <= cold_max:
+            t_cat = "cold"
+        elif opt_min <= temp <= opt_max:
+            t_cat = "optimal"
+        elif temp > opt_max:
+            t_cat = "hot"
+
+        matrix[s_cat][t_cat].append(eff)
+
+    speed_cats = ["city", "mixed", "highway"]
+    temp_cats = ["cold", "mild", "optimal", "hot"]
+    temp_labels = {
+        "cold": f"≤{cold_max:.0f}°C",
+        "mild": f"{cold_max:.0f}-{opt_min:.0f}°C",
+        "optimal": f"{opt_min:.0f}-{opt_max:.0f}°C",
+        "hot": f">{opt_max:.0f}°C",
+    }
+    speed_labels = {
+        "city": f"<{city_thresh:.0f} km/h",
+        "mixed": f"{city_thresh:.0f}-{hw_thresh:.0f} km/h",
+        "highway": f">{hw_thresh:.0f} km/h",
+    }
+
+    grid = []
+    for sc in speed_cats:
+        for tc in temp_cats:
+            vals = matrix[sc][tc]
+            avg_val = round(sum(vals) / len(vals), 1) if vals else None
+            grid.append({
+                "speed_category": sc,
+                "speed_label": speed_labels[sc],
+                "temp_category": tc,
+                "temp_label": temp_labels[tc],
+                "avg_kwh_100km": avg_val,
+                "trip_count": len(vals)
+            })
+
+    matrix_data = [[None for _ in temp_cats] for _ in speed_cats]
+    count_data = [[0 for _ in temp_cats] for _ in speed_cats]
+    for item in grid:
+        si = speed_cats.index(item["speed_category"])
+        ti = temp_cats.index(item["temp_category"])
+        matrix_data[si][ti] = item["avg_kwh_100km"]
+        count_data[si][ti] = item["trip_count"]
+
+    return {
+        "grid": grid,
+        "speed_categories": [speed_labels[sc] for sc in speed_cats],
+        "temp_categories": [temp_labels[tc] for tc in temp_cats],
+        "matrix_values": matrix_data,
+        "trip_counts": count_data,
+    }
+
+
+# =============================================================================
+# TASK 6: Vampire Drain Cost Analysis
+# =============================================================================
+@router.get("/{vehicle_id}/analytics/vampire-drain")
+async def get_vampire_drain(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Calculate average SoC loss per hour while parked, translate to kWh and EUR."""
+    await get_user_vehicle(user.id, vehicle_id, db)
+
+    from app.models.vehicle import UserVehicle
+    v_res = await db.execute(select(UserVehicle).where(UserVehicle.id == vehicle_id))
+    veh = v_res.scalar_one_or_none()
+    battery_kwh = 50.0  # Safe default for EVs if vehicle has no stored capacity
+    if veh:
+        cap = getattr(veh, "battery_capacity_kwh", None)
+        if cap and cap > 0:
+            battery_kwh = float(cap)
+
+    country_code = "LT"
+    if veh:
+        cc = getattr(veh, "country_code", None)
+        if cc:
+            country_code = str(cc)
+
+    from app.models.fuel_price import CountryEconomics
+    elec_price = 0.0
+    eco_res = await db.execute(
+        select(CountryEconomics)
+        .where(CountryEconomics.country_code == country_code)
+        .order_by(CountryEconomics.date.desc())
+        .limit(1)
+    )
+    eco = eco_res.scalar_one_or_none()
+    if eco and eco.electricity_price_kwh_eur:
+        elec_price = float(eco.electricity_price_kwh_eur)
+
+    # Analyze vehicle_states for PARKED sessions to calculate SoC drain rate
+    stmt_vs = (
+        select(VehicleState)
+        .where(VehicleState.user_vehicle_id == vehicle_id)
+        .order_by(VehicleState.first_date)
+        .limit(500)
+    )
+    vs_res = await db.execute(stmt_vs)
+    vs_records = vs_res.scalars().all()
+
+    # Also get charging states for battery_pct
+    stmt_cs = (
+        select(ChargingState)
+        .where(ChargingState.user_vehicle_id == vehicle_id)
+        .where(ChargingState.battery_pct.is_not(None))
+        .order_by(ChargingState.first_date)
+        .limit(500)
+    )
+    cs_res = await db.execute(stmt_cs)
+    cs_records = cs_res.scalars().all()
+
+    # Build a time-series: (timestamp, battery_pct, state) from charging_states
+    soc_timeline: list[tuple[datetime, int, str]] = []
+    for rec in cs_records:
+        if rec.first_date and rec.battery_pct is not None:
+            soc_timeline.append((rec.first_date, int(rec.battery_pct), rec.state or ""))
+
+    # Calculate drain from SoC timeline: CONNECT_CABLE -> CONNECT_CABLE only
+    # Filter to realistic vampire drain: < 0.15%/hr, dsoc < 15%, dt 1-72h
+    soc_drain_rates: list[float] = []
+    for i in range(1, len(soc_timeline)):
+        t0, soc0, s0 = soc_timeline[i - 1]
+        t1, soc1, s1 = soc_timeline[i]
+        dt_h = (t1 - t0).total_seconds() / 3600.0
+        dsoc = float(soc0) - float(soc1)
+        # Only CONNECT_CABLE->CONNECT_CABLE transitions (plugged in, not driving)
+        # and realistic drain rates (< 0.15%/hr = ~3.6%/day max for real vampire drain)
+        if s0 == "CONNECT_CABLE" and s1 == "CONNECT_CABLE":
+            cfg = VAMPIRE_DRAIN_DEFAULTS
+            if cfg["min_parked_hours"] < dt_h < cfg["max_parked_hours"] and 0 < dsoc < cfg["max_dsoc_pct"]:
+                rate = dsoc / dt_h
+                if rate < cfg["max_drain_rate_pct"]:
+                    soc_drain_rates.append(rate)
+
+    avg_pct_per_hour = 0.0
+    if soc_drain_rates:
+        # Use median of realistic rates to avoid skew from long parked sessions
+        sorted_rates = sorted(soc_drain_rates)
+        mid = len(sorted_rates) // 2
+        median_rate = sorted_rates[mid] if len(sorted_rates) % 2 == 1 else (
+            sorted_rates[mid - 1] + sorted_rates[mid]
+        ) / 2
+        # Use median rather than mean to avoid skew from long-parked outliers
+        avg_pct_per_hour = median_rate
+
+    if avg_pct_per_hour <= 0:
+        avg_pct_per_hour = 0.0  # No assumed vampire drain when no data (HC-026/031)
+
+    drain_pct_per_day = avg_pct_per_hour * 24
+    drain_kwh_per_day = battery_kwh * drain_pct_per_day / 100
+    drain_kwh_per_week = drain_kwh_per_day * 7
+    drain_kwh_per_month = drain_kwh_per_day * 30
+
+    return {
+        "avg_drain_pct_per_hour": round(avg_pct_per_hour, 4),
+        "avg_drain_pct_per_day": round(drain_pct_per_day, 2),
+        "drain_kwh_per_day": round(drain_kwh_per_day, 3),
+        "drain_kwh_per_week": round(drain_kwh_per_week, 3),
+        "drain_kwh_per_month": round(drain_kwh_per_month, 3),
+        "electricity_price_eur_kwh": round(elec_price, 4),
+        "cost_per_day_eur": round(drain_kwh_per_day * elec_price, 4),
+        "cost_per_week_eur": round(drain_kwh_per_week * elec_price, 3),
+        "cost_per_month_eur": round(drain_kwh_per_month * elec_price, 2),
+        "battery_capacity_kwh": battery_kwh,
+    }
+
+
+# =============================================================================
+# TASK 7: Dynamic ICE-Equivalent TCO
+# =============================================================================
+@router.get("/{vehicle_id}/analytics/ice-tco")
+async def get_ice_tco(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Compare per-trip EV cost vs ICE fuel cost using per-vehicle ice_l_per_100km calibration."""
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    ice_l_per_100km = cal["ice_l_per_100km"]
+
+    country_code = vehicle.country_code or "LT"
+
+    from app.models.fuel_price import FuelPrice, CountryEconomics
+
+    elec_price = 0.0
+    eco_res = await db.execute(
+        select(CountryEconomics)
+        .where(CountryEconomics.country_code == country_code)
+        .order_by(CountryEconomics.date.desc())
+        .limit(1)
+    )
+    eco = eco_res.scalar_one_or_none()
+    if eco and eco.electricity_price_kwh_eur:
+        elec_price = float(eco.electricity_price_kwh_eur)
+
+    petrol_price = 1.65
+    fuel_res = await db.execute(
+        select(FuelPrice)
+        .where(FuelPrice.country_code == country_code)
+        .where(FuelPrice.fuel_type == "Euro95")
+        .order_by(FuelPrice.week_date.desc())
+        .limit(1)
+    )
+    fuel = fuel_res.scalar_one_or_none()
+    if fuel and fuel.price_eur_liter:
+        petrol_price = float(fuel.price_eur_liter)
+
+    stmt = select(Trip).where(
+        Trip.user_vehicle_id == vehicle_id,
+        Trip.distance_km.is_not(None),
+        Trip.distance_km > 1,
+        Trip.kwh_consumed.is_not(None),
+        Trip.start_date.is_not(None)
+    ).order_by(Trip.start_date).limit(200)
+
+    res = await db.execute(stmt)
+    trips = res.scalars().all()
+
+    results = []
+    cum_ev = 0.0
+    cum_ice = 0.0
+
+    for trip in trips:
+        distance = trip.distance_km or 0
+        kwh = trip.kwh_consumed or 0
+
+        ev_cost = kwh * elec_price
+        ice_cost = (distance * ice_l_per_100km / 100) * petrol_price
+        savings = ice_cost - ev_cost
+
+        cum_ev += ev_cost
+        cum_ice += ice_cost
+
+        results.append({
+            "trip_id": trip.id,
+            "start_date": trip.start_date.isoformat() if trip.start_date else None,
+            "distance_km": round(distance, 1),
+            "kwh_consumed": round(kwh, 2),
+            "ev_cost_eur": round(ev_cost, 3),
+            "ice_cost_eur": round(ice_cost, 3),
+            "savings_eur": round(savings, 3),
+            "cumulative_ev_cost_eur": round(cum_ev, 2),
+            "cumulative_ice_cost_eur": round(cum_ice, 2),
+        })
+
+    return {
+        "trips": results,
+        "summary": {
+            "total_trips": len(results),
+            "total_distance_km": round(sum(t.distance_km or 0 for t in trips), 1),
+            "total_ev_cost_eur": round(cum_ev, 2),
+            "total_ice_cost_eur": round(cum_ice, 2),
+            "total_savings_eur": round(cum_ice - cum_ev, 2),
+            "electricity_price_eur_kwh": round(elec_price, 4),
+            "petrol_price_eur_l": round(petrol_price, 3),
+            "ice_l_per_100km": round(ice_l_per_100km, 1),
+        }
+    }
+
+
+# =============================================================================
+# TASK 8: Route-Specific Efficiency Profiling
+# =============================================================================
+def _geohash(lat: float, lon: float, precision: int = 4) -> str:
+    """Simple geohash: rounded lat/lon."""
+    return f"{round(lat, precision)}_{round(lon, precision)}"
+
+
+@router.get("/{vehicle_id}/analytics/route-efficiency")
+async def get_route_efficiency(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Cluster trips by start/end geohash; compute historical efficiency per route."""
+    await get_user_vehicle(user.id, vehicle_id, db)
+
+    stmt = select(Trip).where(
+        Trip.user_vehicle_id == vehicle_id,
+        Trip.start_lat.is_not(None),
+        Trip.start_lon.is_not(None),
+        Trip.end_lat.is_not(None),
+        Trip.end_lon.is_not(None),
+        Trip.distance_km.is_not(None),
+        Trip.distance_km > 2,
+        Trip.kwh_consumed.is_not(None),
+        Trip.kwh_consumed > 0
+    ).order_by(Trip.start_date.desc()).limit(200)
+
+    res = await db.execute(stmt)
+    trips = res.scalars().all()
+
+    route_groups: dict[str, dict] = {}
+
+    for trip in trips:
+        start_gh = _geohash(trip.start_lat, trip.start_lon)
+        end_gh = _geohash(trip.end_lat, trip.end_lon)
+        route_key = f"{start_gh}->{end_gh}"
+
+        if route_key not in route_groups:
+            route_groups[route_key] = {
+                "start_geo": f"{trip.start_lat:.4f}, {trip.start_lon:.4f}",
+                "end_geo": f"{trip.end_lat:.4f}, {trip.end_lon:.4f}",
+                "efficiencies": [],
+                "temps": [],
+                "distances": [],
+            }
+
+        eff = (trip.kwh_consumed / trip.distance_km) * 100.0
+        route_groups[route_key]["efficiencies"].append(eff)
+        if trip.avg_temp_celsius:
+            route_groups[route_key]["temps"].append(trip.avg_temp_celsius)
+        route_groups[route_key]["distances"].append(trip.distance_km)
+
+    results = []
+    for route_key, data in route_groups.items():
+        effs = data["efficiencies"]
+        avg_eff = round(sum(effs) / len(effs), 1) if effs else 0
+        avg_temp = round(sum(data["temps"]) / len(data["temps"]), 1) if data["temps"] else None
+        total_dist = sum(data["distances"])
+        score = max(0, 100 - (avg_eff - 12) * 10) if avg_eff > 0 else 50
+
+        results.append({
+            "route_key": route_key,
+            "start_location": data["start_geo"],
+            "end_location": data["end_geo"],
+            "trip_count": len(effs),
+            "avg_kwh_100km": avg_eff,
+            "min_kwh_100km": round(min(effs), 1) if effs else 0,
+            "max_kwh_100km": round(max(effs), 1) if effs else 0,
+            "avg_temp_celsius": avg_temp,
+            "total_distance_km": round(total_dist, 1),
+            "efficiency_score": round(score, 1),
+        })
+
+    results.sort(key=lambda x: x["trip_count"], reverse=True)
+
+    return {
+        "routes": results[:50],
+        "total_routes": len(results),
+    }
+
+
+# =============================================================================
+# TASK 9: Predictive Arrival SoC
+# =============================================================================
+@router.get("/{vehicle_id}/analytics/predictive-soc")
+async def get_predictive_soc(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Predict arrival SoC using historical consumption data and current conditions."""
+    await get_user_vehicle(user.id, vehicle_id, db)
+
+    from app.models.vehicle import UserVehicle
+    v_res = await db.execute(select(UserVehicle).where(UserVehicle.id == vehicle_id))
+    veh = v_res.scalar_one_or_none()
+    battery_kwh = 50.0  # Safe default for EVs if vehicle has no stored capacity
+    charge_res = await db.execute(
+        select(ChargingState)
+        .where(ChargingState.user_vehicle_id == vehicle_id)
+        .order_by(ChargingState.first_date.desc())
+        .limit(1)
+    )
+    charge = charge_res.scalar_one_or_none()
+    current_soc = float(charge.battery_pct) if charge and charge.battery_pct else 50.0
+    if veh:
+        cap = getattr(veh, "battery_capacity_kwh", None)
+        if cap and cap > 0:
+            battery_kwh = float(cap)
+
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    cold_max = cal["temp_cold_max_celsius"]
+    opt_min = cal["temp_optimal_min_celsius"]
+    opt_max = cal["temp_optimal_max_celsius"]
+
+    pos_res = await db.execute(
+        select(VehiclePosition)
+        .where(VehiclePosition.user_vehicle_id == vehicle_id)
+        .order_by(VehiclePosition.captured_at.desc())
+        .limit(1)
+    )
+    pos = pos_res.scalar_one_or_none()
+    current_temp = float(pos.outside_temp_celsius) if pos and pos.outside_temp_celsius else 10.0
+
+    # Fetch trips early — needed for HC-028 range fallback calculation
+    trips_stmt = select(Trip).where(
+        Trip.user_vehicle_id == vehicle_id,
+        Trip.distance_km.is_not(None),
+        Trip.distance_km > 5,
+        Trip.kwh_consumed.is_not(None),
+        Trip.avg_temp_celsius.is_not(None)
+    ).order_by(Trip.start_date.desc()).limit(100)
+    trips_res = await db.execute(trips_stmt)
+    trips = trips_res.scalars().all()
+
+    remaining_range_km = 0.0
+    if charge and charge.remaining_range_m:
+        remaining_range_km = charge.remaining_range_m / 1000.0
+    else:
+        # HC-028: derive fallback range from battery_kwh × avg trip efficiency (km/kWh)
+        if trips and len(trips) > 0:
+            all_effs_km_per_kwh = [100.0 / max((t.kwh_consumed / t.distance_km), 0.1) for t in trips if t.distance_km and t.distance_km > 0]
+            avg_efficiency = sum(all_effs_km_per_kwh) / len(all_effs_km_per_kwh) if all_effs_km_per_kwh else 8.0
+        else:
+            avg_efficiency = 8.0  # default km/kWh fallback
+        remaining_range_km = (current_soc / 100) * battery_kwh * avg_efficiency
+
+    # HC-029: target_distance_km cap — configurable via calibration (charger_power_kw slot)
+    target_distance_km = min(remaining_range_km, cal["charger_power_kw"] * 9.09)  # ~200km default for 22kW
+
+    if not trips:
+        return {
+            "current_soc_pct": round(current_soc, 1),
+            "estimated_range_km": round(remaining_range_km, 1),
+            "predicted_arrival_soc_pct": round(current_soc, 1),
+            "confidence_pct": 30,
+            "message": "Not enough trip data for prediction.",
+            "consumption_data": []
+        }
+
+    temps_bucket = {"cold": [], "mild": [], "optimal": [], "hot": []}
+    for trip in trips:
+        temp = trip.avg_temp_celsius
+        eff = (trip.kwh_consumed / trip.distance_km) * 100.0 if trip.distance_km else 0
+        if temp < cold_max:
+            temps_bucket["cold"].append(eff)
+        elif cold_max <= temp < opt_min:
+            temps_bucket["mild"].append(eff)
+        elif opt_min <= temp <= opt_max:
+            temps_bucket["optimal"].append(eff)
+        else:
+            temps_bucket["hot"].append(eff)
+
+    if current_temp < cold_max:
+        temp_cat = "cold"
+    elif cold_max <= current_temp < opt_min:
+        temp_cat = "mild"
+    elif opt_min <= current_temp <= opt_max:
+        temp_cat = "optimal"
+    else:
+        temp_cat = "hot"
+
+    cat_effs = temps_bucket[temp_cat]
+    if not cat_effs:
+        all_effs = [e for bucket in temps_bucket.values() for e in bucket]
+        baseline_consumption = sum(all_effs) / len(all_effs) if all_effs else 18.0
+    else:
+        baseline_consumption = sum(cat_effs) / len(cat_effs)
+
+    energy_needed_kwh = (baseline_consumption / 100) * target_distance_km
+    current_energy_kwh = (current_soc / 100) * battery_kwh
+    remaining_energy_kwh = current_energy_kwh - energy_needed_kwh
+    arrival_soc = (remaining_energy_kwh / battery_kwh) * 100.0
+
+    cat_trips = len(cat_effs)
+    confidence = min(95, 30 + cat_trips * 5)
+    arrival_soc = max(0.0, min(100.0, arrival_soc))
+
+    return {
+        "current_soc_pct": round(current_soc, 1),
+        "current_temp_celsius": round(current_temp, 1),
+        "target_distance_km": round(target_distance_km, 1),
+        "estimated_range_km": round(remaining_range_km, 1),
+        "predicted_arrival_soc_pct": round(arrival_soc, 1),
+        "confidence_pct": round(confidence, 1),
+        "baseline_consumption_kwh_100km": round(baseline_consumption, 1),
+        "energy_needed_kwh": round(energy_needed_kwh, 2),
+        "message": f"At {current_temp}°C with {baseline_consumption:.1f} kWh/100km, you'll arrive with ~{round(arrival_soc)}% battery.",
+        "consumption_by_temp": {
+            cat: round(sum(v) / len(v), 1) if v else None
+            for cat, v in temps_bucket.items()
+        }
     }

@@ -5,15 +5,20 @@ All notable changes to the iVDrive project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-04-25
+## [Unreleased] - 2026-04-26
 
 ### Fixed 🐛
-- **Car Overview Charging Power**: Fixed an indexing bug on the Car Overview dashboard where the "Charging Power (now)" metric card was incorrectly displaying the oldest historical value instead of the current real-time charging power.
+- **speed-temp-matrix**: Now uses per-vehicle calibration for speed/temp thresholds (was hardcoded `<50/>90` km/h and `<5/15-25/>25` °C), matching HVAC Isolation behavior.
+- **predictive-soc**: Removed duplicate `UserVehicle` query — the function was fetching the same vehicle from DB twice unnecessarily.
+- **Vehicle WLTP Fallback Removed**: Removed hardcoded ENYAQ model/trim-based WLTP range fallbacks from `get_overview_wltp`. Now returns `null` when no user-defined or drive-derived WLTP value exists — frontend already handles null gracefully.
+- **Vehicle country_code Default Removed**: Removed hardcoded `"LT"` default from vehicle creation. Country code is now stored as `null` when not provided; analytics endpoints fall back to `"LT"` for fuel/economics queries.
 - **Analytics API Safety & Alignment**: Addressed several PR Agent findings: added safe division checks for speed calculations, prevented negative HVAC penalty outputs, added strict null-checks to frontend metrics, and fully integrated date filtering into the HVAC Isolation endpoint and dashboard.
+- **Elevation API Reliability**: Replaced OpenTopoData external API calls with direct `vehicle_positions.elevation_m` SQL lookups — eliminates HTTP dependency and works reliably inside Docker.
+- **Vampire Drain Calculation**: Fixed broken calculation that used non-existent `BatteryHealth.hv_battery_soc` field. Now correctly uses `ChargingState` with `state=CONNECT_CABLE` intervals, median instead of mean, drain rate capped at 0.15%/hr to exclude driving consumption.
+- **Settings Efficiency Calibration UX**: Store input values as raw strings instead of parsing to Number on every keystroke — eliminates cursor jumping when typing decimal values like "0."
 
-### Added 🌟
-- **HVAC Auxiliary Power Isolation**: Added new endpoint and frontend dashboard to analyze and isolate heating costs by comparing trips with similar speeds but different temperatures.
-- **Charging Curve Integrals**: Implemented a new backend endpoint to map SoC vs. Power (kW) and accurately calculate time wasted charging from 80% to 100%. Added a visual Recharts dashboard to the Statistics view.
+### Removed 🚫
+- **Charge Windows / NordPool**: Removed the NordPool-based charging optimization feature. The `get_nordpool_prices()` and `get_missed_savings()` backend endpoints, `ChargingCostsDashboard`, and `MissedSavingsDashboard` frontend components have been deleted. NordPool only covers ~10 EU countries and was misleading for users in unsupported regions. Economics now rely solely on per-country `CountryEconomics.electricity_price_kwh_eur`.
 
 ## [v1.0.21.1] - 2026-04-20
 

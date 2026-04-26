@@ -194,7 +194,7 @@ async def create_vehicle(
         active_interval_seconds=body.active_interval_seconds,
         parked_interval_seconds=body.parked_interval_seconds,
         wltp_range_km=body.wltp_range_km,
-        country_code=body.country_code or "LT",
+        country_code=body.country_code,
     )
     db.add(vehicle)
     await db.flush()
@@ -1069,21 +1069,6 @@ async def get_overview_wltp(
             return WLTPResponse(wltp_range_km=float(wltp))
         except (TypeError, ValueError):
             pass
-            
-    # 4. Model-based fallbacks
-    model_str = (vehicle.model or "").upper()
-    trim_str = (vehicle.trim_level or "").upper()
-    
-    if "ENYAQ" in model_str:
-        if "80X" in trim_str or "RS" in trim_str or "VRS" in trim_str:
-            wltp = 520.0
-        elif "80" in trim_str:
-            wltp = 540.0
-        elif "60" in trim_str:
-            wltp = 410.0
-        else:
-            wltp = 500.0
-        return WLTPResponse(wltp_range_km=wltp)
 
     return WLTPResponse(wltp_range_km=None)
 
