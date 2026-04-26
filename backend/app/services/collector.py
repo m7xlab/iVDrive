@@ -1,7 +1,6 @@
 from app.config import settings
 import os
 import json
-import random
 from sqlalchemy.orm import selectinload
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from uuid import UUID
@@ -100,7 +99,7 @@ class DataCollector:
             seconds=SYNC_INTERVAL_SECONDS,
             id="sync_vehicles_from_db",
             replace_existing=True,
-        )
+        )  # SYNC_INTERVAL_SECONDS=90: DB refresh rate for vehicle/token sync — part of smart polling engine, not user-facing
 
         self._listen_task = asyncio.ensure_future(self._listen_events())
 
@@ -504,7 +503,7 @@ class DataCollector:
                 # ── Step 3: Stabilization (Smart Polling v2.1) ───────────────
                 # When car stops being active, we continue "Active" polling for a few cycles
                 # to ensure we capture the final odometer/position/state for analytics.
-                STABILIZATION_CYCLES = 3 # ~3 extra polls before dropping to parked interval
+                STABILIZATION_CYCLES = 3  # ~3 extra polls before dropping to parked interval (smart polling engine)
 
                 if car_active:
                     # Car is genuinely active, reset the stabilization countdown
@@ -960,13 +959,6 @@ class DataCollector:
                     max_gap_s=max_gap_s,
                     battery_temperature=battery_temp,
                 )
-
-                if random.random() < 0.01:
-                    session.add(WeconnectError(
-                        user_vehicle_id=user_vehicle_id,
-                        datetime=now,
-                        error_text="Simulated Weconnect Error",
-                    ))
 
                 # ── Raw API payload archive ─────────────────────────────────
                 # Serialize every response (pydantic → dict) and store as JSONB.
