@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Analytics API Safety & Alignment**: Addressed several PR Agent findings: added safe division checks for speed calculations, prevented negative HVAC penalty outputs, added strict null-checks to frontend metrics, and fully integrated date filtering into the HVAC Isolation endpoint and dashboard.
 - **Elevation API Reliability**: Replaced OpenTopoData external API calls with direct `vehicle_positions.elevation_m` SQL lookups — eliminates HTTP dependency and works reliably inside Docker.
 - **Vampire Drain Calculation**: Fixed broken calculation that used non-existent `BatteryHealth.hv_battery_soc` field. Now correctly uses `ChargingState` with `state=CONNECT_CABLE` intervals, median instead of mean, drain rate capped at 0.15%/hr to exclude driving consumption.
+- **Settings Efficiency Calibration UX**: Store input values as raw strings instead of parsing to Number on every keystroke — eliminates cursor jumping when typing decimal values like "0."
 
 ### Removed 🚫
 - **Charge Windows / NordPool**: Removed the NordPool-based charging optimization feature. The `get_nordpool_prices()` and `get_missed_savings()` backend endpoints, `ChargingCostsDashboard`, and `MissedSavingsDashboard` frontend components have been deleted. NordPool only covers ~10 EU countries and was misleading for users in unsupported regions. Economics now rely solely on per-country `CountryEconomics.electricity_price_kwh_eur`.
