@@ -12,6 +12,7 @@ import { EfficiencyDashboard } from "./EfficiencyDashboard";
 import { CarOverviewDashboard } from "./CarOverviewDashboard";
 
 import { DrivingSummaryDashboard } from "./DrivingSummaryDashboard";
+import { ChargingStatisticsDashboard } from "./ChargingStatisticsDashboard";
 import { ChargingAnalysisDashboard } from "./ChargingAnalysisDashboard";
 import { HVACIsolationDashboard } from "./HVACIsolationDashboard";
 import { ElevationPenaltyDashboard } from "./ElevationPenaltyDashboard";
@@ -184,7 +185,7 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
             <PulseDashboard vehicleId={vehicleId} />
           </Tabs.Content>
           <Tabs.Content value="efficiency">
-            <EfficiencyDashboard vehicleId={vehicleId} dateRange={range} />
+            <EfficiencyDashboard vehicleId={vehicleId} />
           </Tabs.Content>
 
           <Tabs.Content value="driving-summary">
