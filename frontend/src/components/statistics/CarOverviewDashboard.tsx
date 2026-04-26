@@ -27,13 +27,45 @@ import {
   ComposedChart,
 } from "recharts";
 import { api } from "@/lib/api";
-import { Battery, Zap as ZapIcon, Maximize } from "lucide-react";
+import { Battery, Zap as ZapIcon, Maximize, Clock, ThermometerSnowflake } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { TimelineRange } from "./StatisticsShell";
 
 export type StateToggleId = "online" | "climatization" | "charging" | "driving";
 
 export type SectionId = "levels" | "consumption" | "efficiency" | "chargingPower";
+
+// ─── Live Pulse ────────────────────────────────────────────────────
+interface PulseData {
+  status: string;
+  battery_pct: number;
+  remaining_range_km: number;
+  temperature_celsius: number | null;
+  weather_code: string | null;
+  is_online: boolean;
+  charging_power_kw: number;
+  remaining_charge_time_min: number;
+}
+
+// ─── Winter Efficiency ──────────────────────────────────────────────
+interface EfficiencyDataPoint {
+  temperature_celsius: number;
+  consumption_kwh_100km: number;
+  trips_recorded: number;
+}
+
+// ─── Section divider ────────────────────────────────────────────────
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-px flex-1 bg-iv-border/40" />
+      <span className="text-xs bg-iv-surface border border-iv-border text-iv-muted px-2 py-0.5 rounded-full flex items-center gap-1">
+        <Clock size={10} /> {label}
+      </span>
+      <div className="h-px flex-1 bg-iv-border/40" />
+    </div>
+  );
+}
 
 export interface StateBand {
   from_date: string;
@@ -218,11 +250,13 @@ export function CarOverviewDashboard({
   const [rangesStep, setRangesStep] = useState<Array<{ timestamp: string; range_km: number }>>([]);
   const [batteryTemp, setBatteryTemp] = useState<Array<{ time: string; battery_temperature: number }>>([]);
   const [outsideTemp, setOutsideTemp] = useState<Array<{ time: string; outside_temp_celsius: number }>>([]);
+  const [pulse, setPulse] = useState<PulseData | null>(null);
+  const [winterEfficiency, setWinterEfficiency] = useState<EfficiencyDataPoint[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [b, r, c, bands, range100, wltp, eff, lStep, rStep, oTemp, bTemp, elecCons, vd] = await Promise.all([
+      const [b, r, c, bands, range100, wltp, eff, lStep, rStep, oTemp, bTemp, elecCons, vd, pulseData, winterEff] = await Promise.all([
         api.getBatteryHistory(vehicleId, 10000, fromISO, toISOVal),
         api.getRangeHistory(vehicleId, 10000, fromISO, toISOVal),
         api.getChargingHistory(vehicleId, 10000, fromISO, toISOVal),
@@ -248,6 +282,8 @@ export function CarOverviewDashboard({
         api.getBatteryTemperature(vehicleId, 10000, fromISO, toISOVal),
         api.getElectricConsumption(vehicleId, 10000, fromISO, toISOVal),
         api.getVampireDrain(vehicleId).catch(() => null),
+        api.getAnalyticsPulse(vehicleId).catch(() => null),
+        api.getAnalyticsEfficiency(vehicleId).catch(() => []),
       ]);
       setBattery(b ?? []);
       setRange(r ?? []);
@@ -262,6 +298,8 @@ export function CarOverviewDashboard({
       setOutsideTemp(oTemp ?? []);
       setBatteryTemp(bTemp ?? []);
       setVampireDrain(vd ?? null);
+      setPulse(pulseData ?? null);
+      setWinterEfficiency(winterEff ?? []);
     } catch (err) {
       console.error('CarOverview Fetch Error:', err);
       setBattery([]);
@@ -476,39 +514,81 @@ export function CarOverviewDashboard({
 
   return (
     <div className="space-y-6">
-      {/* Global state toggles: apply to all charts below, persisted across refresh */}
-      
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-        <div className="glass rounded-xl p-5 border border-iv-border flex flex-col justify-between">
-          <div className="flex items-center gap-2 text-iv-muted mb-2">
-            <Battery size={16} className="text-iv-green" />
-            <span className="text-sm font-medium">Battery (now)</span>
+      {/* ── Live Pulse Hero ── */}
+      <div className="glass rounded-xl p-5 border border-iv-border">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-sm font-semibold text-iv-text flex items-center gap-2">
+              <Battery size={16} className="text-iv-green" />
+              Live Pulse
+            </h3>
+            <p className="text-xs text-iv-muted mt-0.5">Real-time vehicle state</p>
           </div>
-          <div className="flex items-end gap-2">
-            <span className="text-3xl font-bold text-iv-text">{battery.length > 0 ? battery[0].level : "--"}</span>
-            <span className="text-lg text-iv-muted mb-0.5">%</span>
-          </div>
+          {pulse && (
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pulse.is_online ? "bg-iv-green/15 text-iv-green" : "bg-rose-500/15 text-rose-400"}`}>
+              {pulse.is_online ? "● ONLINE" : "OFFLINE"}
+            </span>
+          )}
         </div>
-        <div className="glass rounded-xl p-5 border border-iv-border flex flex-col justify-between">
-          <div className="flex items-center gap-2 text-iv-muted mb-2">
-            <Maximize size={16} className="text-iv-cyan" />
-            <span className="text-sm font-medium">Projected Electric Range (now)</span>
+
+        {!pulse ? (
+          <div className="h-24 flex items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-iv-border border-t-iv-green" />
           </div>
-          <div className="flex items-end gap-2">
-            <span className="text-3xl font-bold text-iv-text">{range.length > 0 ? Math.round(range[0].range_km) : "--"}</span>
-            <span className="text-lg text-iv-muted mb-0.5">km</span>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Battery */}
+            <div className="bg-iv-surface/60 rounded-xl p-4 border border-iv-border">
+              <p className="text-xs text-iv-muted mb-2">Battery</p>
+              <div className="flex items-end gap-1">
+                <span className="text-2xl font-bold text-iv-text">{pulse.battery_pct}</span>
+                <span className="text-sm text-iv-muted mb-0.5">%</span>
+              </div>
+              <div className="w-full bg-iv-charcoal h-1.5 rounded-full mt-2 overflow-hidden">
+                <div className="bg-iv-green h-full" style={{ width: `${pulse.battery_pct}%` }} />
+              </div>
+            </div>
+
+            {/* Estimated Range */}
+            <div className="bg-iv-surface/60 rounded-xl p-4 border border-iv-border">
+              <p className="text-xs text-iv-muted mb-2">Projected Range</p>
+              <div className="flex items-end gap-1">
+                <span className="text-2xl font-bold text-iv-text">{pulse.remaining_range_km}</span>
+                <span className="text-sm text-iv-muted mb-0.5">km</span>
+              </div>
+              <p className="text-[10px] text-iv-muted mt-2">at current SoC</p>
+            </div>
+
+            {/* Charging Power / Motion Status */}
+            {pulse.status === "CHARGING" || pulse.status === "READY_FOR_CHARGING" ? (
+              <div className="bg-iv-surface/60 rounded-xl p-4 border border-emerald-500/30">
+                <p className="text-xs text-iv-muted mb-2">Charging Power</p>
+                <div className="flex items-end gap-1">
+                  <span className="text-2xl font-bold text-iv-text">{pulse.charging_power_kw}</span>
+                  <span className="text-sm text-iv-muted mb-0.5">kW</span>
+                </div>
+                <p className="text-[10px] text-iv-muted mt-2">{pulse.remaining_charge_time_min} min to target</p>
+              </div>
+            ) : (
+              <div className="bg-iv-surface/60 rounded-xl p-4 border border-iv-border">
+                <p className="text-xs text-iv-muted mb-2">Motion Status</p>
+                <p className="text-base font-semibold text-iv-text">{pulse.status}</p>
+                <p className="text-[10px] text-iv-muted mt-2">Real-time state</p>
+              </div>
+            )}
+
+            {/* Ambient Temperature */}
+            <div className="bg-iv-surface/60 rounded-xl p-4 border border-iv-border">
+              <p className="text-xs text-iv-muted mb-2">Ambient Temp</p>
+              <div className="flex items-end gap-1">
+                <span className="text-2xl font-bold text-iv-text">
+                  {pulse.temperature_celsius != null ? `${pulse.temperature_celsius}°` : "—"}
+                </span>
+              </div>
+              <p className="text-[10px] text-iv-muted mt-2">Local weather</p>
+            </div>
           </div>
-        </div>
-        <div className="glass rounded-xl p-5 border border-iv-border flex flex-col justify-between">
-          <div className="flex items-center gap-2 text-iv-muted mb-2">
-            <ZapIcon size={16} className="text-amber-500" />
-            <span className="text-sm font-medium">Charging Power (now)</span>
-          </div>
-          <div className="flex items-end gap-2">
-            <span className="text-3xl font-bold text-iv-text">{charging.length > 0 && charging[0].charge_power_kw != null ? charging[0].charge_power_kw : "0"}</span>
-            <span className="text-lg text-iv-muted mb-0.5">kW</span>
-          </div>
-        </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
