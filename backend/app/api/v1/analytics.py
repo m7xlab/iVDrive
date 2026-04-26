@@ -1143,8 +1143,17 @@ async def get_speed_temp_matrix(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Speed × Temperature → avg kWh/100km matrix."""
-    await get_user_vehicle(user.id, vehicle_id, db)
+    """Speed × Temperature → avg kWh/100km matrix.
+
+    Uses per-vehicle speed and temperature thresholds from calibration.
+    """
+    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
+    cal = _calibration(vehicle)
+    city_thresh = cal["speed_city_threshold_kmh"]
+    hw_thresh = cal["speed_highway_threshold_kmh"]
+    cold_max = cal["temp_cold_max_celsius"]
+    opt_min = cal["temp_optimal_min_celsius"]
+    opt_max = cal["temp_optimal_max_celsius"]
 
     stmt = select(Trip).where(
         Trip.user_vehicle_id == vehicle_id,
@@ -1174,25 +1183,34 @@ async def get_speed_temp_matrix(
         eff = (trip.kwh_consumed / trip.distance_km) * 100.0
 
         s_cat = "mixed"
-        if speed < 50:
+        if speed < city_thresh:
             s_cat = "city"
-        elif speed > 90:
+        elif speed > hw_thresh:
             s_cat = "highway"
 
         t_cat = "mild"
-        if temp < 5:
+        if temp <= cold_max:
             t_cat = "cold"
-        elif 15 <= temp <= 25:
+        elif opt_min <= temp <= opt_max:
             t_cat = "optimal"
-        elif temp > 25:
+        elif temp > opt_max:
             t_cat = "hot"
 
         matrix[s_cat][t_cat].append(eff)
 
     speed_cats = ["city", "mixed", "highway"]
     temp_cats = ["cold", "mild", "optimal", "hot"]
-    temp_labels = {"cold": "<5°C", "mild": "5-15°C", "optimal": "15-25°C", "hot": ">25°C"}
-    speed_labels = {"city": "<50 km/h", "mixed": "50-90 km/h", "highway": ">90 km/h"}
+    temp_labels = {
+        "cold": f"≤{cold_max:.0f}°C",
+        "mild": f"{cold_max:.0f}-{opt_min:.0f}°C",
+        "optimal": f"{opt_min:.0f}-{opt_max:.0f}°C",
+        "hot": f">{opt_max:.0f}°C",
+    }
+    speed_labels = {
+        "city": f"<{city_thresh:.0f} km/h",
+        "mixed": f"{city_thresh:.0f}-{hw_thresh:.0f} km/h",
+        "highway": f">{hw_thresh:.0f} km/h",
+    }
 
     grid = []
     for sc in speed_cats:
