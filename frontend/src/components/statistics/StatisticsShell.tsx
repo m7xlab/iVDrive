@@ -12,7 +12,7 @@ import { EfficiencyDashboard } from "./EfficiencyDashboard";
 import { CarOverviewDashboard } from "./CarOverviewDashboard";
 
 import { DrivingSummaryDashboard } from "./DrivingSummaryDashboard";
-import { ChargingStatisticsDashboard } from "./ChargingStatisticsDashboard";
+import { ChargingEconomicsDashboard } from "./ChargingEconomicsDashboard";
 import { ChargingAnalysisDashboard } from "./ChargingAnalysisDashboard";
 import { HVACIsolationDashboard } from "./HVACIsolationDashboard";
 import { ElevationPenaltyDashboard } from "./ElevationPenaltyDashboard";
@@ -33,8 +33,7 @@ const TABS = [
   { id: "pulse",               label: "Live Pulse",         icon: "📡" },
   { id: "efficiency",          label: "Winter Penalty",      icon: "❄️" },
   { id: "driving-summary",    label: "Driving Summary",   icon: "🚗" },
-  { id: "charging-stats",      label: "Charging Stats",     icon: "🔌" },
-  { id: "charging-analysis", label: "Charging Analysis", icon: "⚡" },
+  { id: "charging-economics", label: "Charging Economics", icon: "🔌" },
   { id: "hvac-isolation",      label: "HVAC Isolation",     icon: "🌡️" },
   { id: "elevation-penalty",   label: "Elevation",         icon: "⛰️" },
   { id: "speed-temp-matrix",   label: "Speed × Temp",       icon: "🌡️" },
@@ -190,11 +189,8 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
           <Tabs.Content value="driving-summary">
             <DrivingSummaryDashboard vehicleId={vehicleId} dateRange={range} />
           </Tabs.Content>
-          <Tabs.Content value="charging-stats">
-            <ChargingStatisticsDashboard vehicleId={vehicleId} dateRange={range} />
-          </Tabs.Content>
-          <Tabs.Content value="charging-analysis">
-            <ChargingAnalysisDashboard vehicleId={vehicleId} dateRange={range} />
+          <Tabs.Content value="charging-economics">
+            <ChargingEconomicsDashboard vehicleId={vehicleId} dateRange={range} />
           </Tabs.Content>
           <Tabs.Content value="hvac-isolation">
             <HVACIsolationDashboard vehicleId={vehicleId} dateRange={range} />
