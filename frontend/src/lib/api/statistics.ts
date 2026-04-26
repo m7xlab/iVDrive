@@ -228,11 +228,6 @@ export const statisticsApi = {
     return res.json();
   },
 
-  async getMissedSavings(id: string) {
-    const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/missed-savings`);
-    return res.json();
-  },
-
   async getVampireDrain(id: string) {
     const res = await apiFetch(`/api/v1/vehicles/${id}/analytics/vampire-drain`);
     return res.json();

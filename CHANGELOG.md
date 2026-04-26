@@ -14,9 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Elevation API Reliability**: Replaced OpenTopoData external API calls with direct `vehicle_positions.elevation_m` SQL lookups — eliminates HTTP dependency and works reliably inside Docker.
 - **Vampire Drain Calculation**: Fixed broken calculation that used non-existent `BatteryHealth.hv_battery_soc` field. Now correctly uses `ChargingState` with `state=CONNECT_CABLE` intervals, median instead of mean, drain rate capped at 0.15%/hr to exclude driving consumption.
 
-### Added 🌟
-- **HVAC Auxiliary Power Isolation**: Added new endpoint and frontend dashboard to analyze and isolate heating costs by comparing trips with similar speeds but different temperatures.
-- **Charging Curve Integrals**: Implemented a new backend endpoint to map SoC vs. Power (kW) and accurately calculate time wasted charging from 80% to 100%. Added a visual Recharts dashboard to the Statistics view.
+### Removed 🚫
+- **Charge Windows / NordPool**: Removed the NordPool-based charging optimization feature. The `get_nordpool_prices()` and `get_missed_savings()` backend endpoints, `ChargingCostsDashboard`, and `MissedSavingsDashboard` frontend components have been deleted. NordPool only covers ~10 EU countries and was misleading for users in unsupported regions. Economics now rely solely on per-country `CountryEconomics.electricity_price_kwh_eur`.
 
 ## [v1.0.21.1] - 2026-04-20
 

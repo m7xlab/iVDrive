@@ -98,44 +98,6 @@ async def get_efficiency_curve(
     ]
 
 @router.get("/{vehicle_id}/analytics/charging-costs")
-async def get_charging_costs(
-    vehicle_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Returns cost savings: Base NordPool vs Actual Paid (Public Chargers)."""
-    await get_user_vehicle(user.id, vehicle_id, db)
-    
-    stmt = (
-        select(
-            func.sum(ChargingSession.base_cost_eur).label("total_base_cost"),
-            func.sum(ChargingSession.actual_cost_eur).label("total_actual_cost"),
-            func.sum(ChargingSession.energy_kwh).label("total_kwh"),
-            func.count(ChargingSession.id).label("session_count")
-        )
-        .where(
-            ChargingSession.user_vehicle_id == vehicle_id,
-            ChargingSession.energy_kwh > 0
-        )
-    )
-    
-    result = await db.execute(stmt)
-    row = result.first()
-    
-    if not row:
-        return {"total_base_cost_eur": 0, "total_actual_cost_eur": 0, "total_kwh_added": 0, "markup_paid_eur": 0}
-        
-    base = float(row.total_base_cost or 0)
-    actual = float(row.total_actual_cost or 0)
-    
-    return {
-        "total_sessions": row.session_count or 0,
-        "total_kwh_added": round(float(row.total_kwh or 0), 2),
-        "total_base_cost_eur": round(base, 2),
-        "total_actual_cost_eur": round(actual, 2),
-        "markup_paid_eur": round(actual - base, 2) if actual > 0 else 0
-    }
-
 @router.get("/{vehicle_id}/analytics/charging-sessions")
 async def get_charging_sessions(
     vehicle_id: UUID,
@@ -1056,8 +1018,6 @@ async def get_charging_curve_integrals_v2(
 # =============================================================================
 # TASK 3: Elevation Penalty & Regen Efficiency
 # =============================================================================
-import httpx
-
 _elevation_cache: dict[str, float] = {}
 
 
@@ -1263,140 +1223,6 @@ async def get_speed_temp_matrix(
         "temp_categories": [temp_labels[tc] for tc in temp_cats],
         "matrix_values": matrix_data,
         "trip_counts": count_data,
-    }
-
-
-# =============================================================================
-# TASK 5: Missed Savings / Optimal Charging Window
-# =============================================================================
-_nordpool_cache: dict[str, Any] = {}
-
-
-async def get_nordpool_prices() -> dict[str, list[float]]:
-    """Fetch NordPool hourly prices (EUR/MWh → EUR/kWh), keyed by date."""
-    today = date.today()
-    cache_key = f"nordpool_{today}"
-    if cache_key in _nordpool_cache:
-        return _nordpool_cache[cache_key]
-
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                "https://nordpoolspot.com/api/marketdata/page/41",
-                params={"currency": "EUR", "countryCode": "LT"}
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                prices_by_date: dict[str, list[float]] = {}
-                rows = data.get("data", []) or data.get("Rows", [])
-                for row in rows:
-                    ts = row.get("timestamp", row.get("Date", ""))
-                    val = row.get("value", row.get("Price", 0))
-                    if ts and val is not None:
-                        d = str(ts)[:10]
-                        if d not in prices_by_date:
-                            prices_by_date[d] = [0.0] * 24
-                        hour = int(str(ts)[11:13]) if len(ts) > 11 else 0
-                        if 0 <= hour < 24:
-                            prices_by_date[d][hour] = float(val) / 1000.0
-                _nordpool_cache[cache_key] = prices_by_date
-                return prices_by_date
-    except Exception:
-        pass
-    return {}
-
-
-@router.get("/{vehicle_id}/analytics/missed-savings")
-async def get_missed_savings(
-    vehicle_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """
-    Cross-reference charging sessions with NordPool prices to calculate missed savings.
-    Uses realistic energy capacity in cheapest 4h window based on charger_power_kw:
-      max_energy_in_4h = charger_power_kw * 4
-    Charger power is read from the vehicle's efficiency calibration settings.
-    """
-    vehicle = await get_user_vehicle(user.id, vehicle_id, db)
-    cal = _calibration(vehicle)
-    charger_power_kw = cal["charger_power_kw"]
-
-    stmt = select(ChargingSession).where(
-        ChargingSession.user_vehicle_id == vehicle_id,
-        ChargingSession.session_start.is_not(None),
-        ChargingSession.energy_kwh.is_not(None),
-        ChargingSession.energy_kwh > 0
-    ).order_by(ChargingSession.session_start.desc()).limit(50)
-
-    res = await db.execute(stmt)
-    sessions = res.scalars().all()
-
-    prices = await get_nordpool_prices()
-
-    results = []
-    total_actual = 0.0
-    total_optimal = 0.0
-
-    # max energy that can be added in the cheapest 4h window at given charger power
-    max_energy_in_4h = charger_power_kw * 4
-
-    for session in sessions:
-        start = session.session_start
-        if not start:
-            continue
-
-        d = start.strftime("%Y-%m-%d")
-        hour = start.hour
-        hourly_price = 0.25
-
-        if d in prices and len(prices[d]) > hour:
-            hourly_price = prices[d][hour]
-
-        energy = session.energy_kwh or 0
-        actual_cost = session.actual_cost_eur or 0
-
-        if actual_cost <= 0:
-            actual_cost = hourly_price * energy
-
-        # Find cheapest 4-hour window for this date
-        if d in prices:
-            all_hours = prices[d]
-            cheapest_window_cost = float("inf")
-            for window_start in range(24):
-                window_prices = [all_hours[(window_start + h) % 24] for h in range(4)]
-                window_cost = sum(sorted(window_prices)[:4])
-                if window_cost < cheapest_window_cost:
-                    cheapest_window_cost = window_cost
-            # Scale by actual energy achievable in 4h (not by session energy which may be larger)
-            optimal_cost = cheapest_window_cost * max_energy_in_4h
-        else:
-            optimal_cost = hourly_price * max_energy_in_4h
-
-        missed = actual_cost - optimal_cost
-
-        results.append({
-            "session_id": session.id,
-            "session_start": start.isoformat(),
-            "energy_kwh": round(energy, 2),
-            "charger_power_kw": charger_power_kw,
-            "max_energy_in_4h_kwh": round(max_energy_in_4h, 2),
-            "hourly_price_eur_kwh": round(hourly_price, 4),
-            "actual_cost_eur": round(actual_cost, 2),
-            "optimal_cost_eur": round(optimal_cost, 2),
-            "missed_savings_eur": round(max(0, missed), 2),
-        })
-
-        total_actual += actual_cost
-        total_optimal += optimal_cost
-
-    return {
-        "sessions": results,
-        "charger_power_kw": charger_power_kw,
-        "max_energy_in_4h_kwh": round(max_energy_in_4h, 2),
-        "total_actual_cost_eur": round(total_actual, 2),
-        "total_optimal_cost_eur": round(total_optimal, 2),
-        "total_missed_savings_eur": round(max(0, total_actual - total_optimal), 2),
     }
 
 

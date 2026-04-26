@@ -9,7 +9,6 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { PulseDashboard } from "./PulseDashboard";
 import { EfficiencyDashboard } from "./EfficiencyDashboard";
-import { ChargingCostsDashboard } from "./ChargingCostsDashboard";
 import { CarOverviewDashboard } from "./CarOverviewDashboard";
 
 import { TripsDashboard } from "./TripsDashboard";
@@ -22,7 +21,6 @@ import { HVACIsolationDashboard } from "./HVACIsolationDashboard";
 import { ChargingCurveIntegralsDashboard } from "./ChargingCurveIntegralsDashboard";
 import { ElevationPenaltyDashboard } from "./ElevationPenaltyDashboard";
 import { SpeedTempMatrixDashboard } from "./SpeedTempMatrixDashboard";
-import { MissedSavingsDashboard } from "./MissedSavingsDashboard";
 import { VampireDrainDashboard } from "./VampireDrainDashboard";
 import { IceTcoDashboard } from "./IceTcoDashboard";
 import { RouteEfficiencyDashboard } from "./RouteEfficiencyDashboard";
@@ -38,7 +36,6 @@ const TABS = [
   { id: "car-overview",        label: "Car Overview",       icon: "📊" },
   { id: "pulse",               label: "Live Pulse",         icon: "📡" },
   { id: "efficiency",          label: "Winter Penalty",      icon: "❄️" },
-  { id: "economics",          label: "Charging Economics",  icon: "⚡" },
   { id: "trips",               label: "Trips",              icon: "🗺️" },
   { id: "movement",            label: "Movement",           icon: "🚗" },
   { id: "driving-stats",       label: "Driving Stats",       icon: "📈" },
@@ -48,7 +45,6 @@ const TABS = [
   { id: "charging-curve-integrals", label: "Curve Int.",    icon: "🔋" },
   { id: "elevation-penalty",   label: "Elevation",         icon: "⛰️" },
   { id: "speed-temp-matrix",   label: "Speed × Temp",       icon: "🌡️" },
-  { id: "missed-savings",      label: "Charge Windows",    icon: "💰" },
   { id: "vampire-drain",       label: "Vampire Drain",       icon: "🧛" },
   { id: "ice-tco",             label: "ICE vs EV",           icon: "⛽" },
   { id: "route-efficiency",    label: "Route Efficiency",   icon: "🛣️" },
@@ -199,9 +195,7 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
           <Tabs.Content value="efficiency">
             <EfficiencyDashboard vehicleId={vehicleId} dateRange={range} />
           </Tabs.Content>
-          <Tabs.Content value="economics">
-            <ChargingCostsDashboard vehicleId={vehicleId} dateRange={range} />
-          </Tabs.Content>
+
           <Tabs.Content value="trips">
             <TripsDashboard vehicleId={vehicleId} dateRange={range} />
           </Tabs.Content>
@@ -229,10 +223,6 @@ export function StatisticsShell({ vehicleId }: { vehicleId: string }) {
           <Tabs.Content value="speed-temp-matrix">
             <SpeedTempMatrixDashboard vehicleId={vehicleId} />
           </Tabs.Content>
-          <Tabs.Content value="missed-savings">
-            <MissedSavingsDashboard vehicleId={vehicleId} />
-          </Tabs.Content>
-          <Tabs.Content value="vampire-drain">
             <VampireDrainDashboard vehicleId={vehicleId} />
           </Tabs.Content>
           <Tabs.Content value="ice-tco">
