@@ -951,6 +951,11 @@ class DataCollector:
                         outside_temperature=temp_c,
                     )
 
+                # Extract battery temperature from status endpoint
+                battery_temp = None
+                if status_resp and status_resp.overall and status_resp.overall.battery:
+                    battery_temp = getattr(status_resp.overall.battery, "temperature", None)
+
                 await _update_or_insert_duration_state(
                     session, BatteryTemperature, user_vehicle_id,
                     match_keys={"battery_temperature": battery_temp},
