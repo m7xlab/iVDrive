@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - 2026-04-27
 
+### Added 🆕
+- **analytics.py**: `GET /analytics/charging-curve-integrals-v2` now accepts optional `session_id` query param to filter charging curves by specific charging session.
+- **analytics.py**: `charging-curve-integrals-v2` now computes actual charging durations per SoC bracket using `min/max(captured_at)` timestamps instead of the 5-min sampling estimate.
+
 ### Fixed 🐛
 - **collector.py**: Assign `battery_temp` from `status_resp.overall.battery.temperature` before BatteryTemperature write block; add null guard to skip when None.
 - **analytics.py**: Replace dynamic `__import__('sqlalchemy').text()` calls with the already-imported top-level `text()` function.
