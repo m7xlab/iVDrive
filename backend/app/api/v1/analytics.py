@@ -102,7 +102,7 @@ async def get_charging_sessions(
     vehicle_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    limit: int = 20
+    limit: int = Query(default=20, le=10000)
 ):
     """List recent charging sessions for the UI."""
     await get_user_vehicle(user.id, vehicle_id, db)
@@ -229,7 +229,7 @@ async def get_battery_health(
     vehicle_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    limit: int = 100
+    limit: int = Query(default=100, le=10000)
 ):
     """Return the latest battery health metrics including 12V and cell voltages."""
     await get_user_vehicle(user.id, vehicle_id, db)
@@ -268,7 +268,7 @@ async def get_power_usage(
     vehicle_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    limit: int = 100
+    limit: int = Query(default=100, le=10000)
 ):
     """Return detailed power consumption breakdown over time."""
     await get_user_vehicle(user.id, vehicle_id, db)
@@ -299,7 +299,7 @@ async def get_charging_curves(
     vehicle_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    limit: int = 100
+    limit: int = Query(default=100, le=10000)
 ):
     """Return charging curve points (power/voltage vs SoC)."""
     await get_user_vehicle(user.id, vehicle_id, db)
@@ -332,7 +332,7 @@ async def get_legacy_charging_power_curve(
     vehicle_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-    limit: int = 500
+    limit: int = Query(default=500, le=50000)
 ):
     """Query 41 & 51: Real-time charging power curve."""
     await get_user_vehicle(user.id, vehicle_id, db)
