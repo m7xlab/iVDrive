@@ -170,7 +170,7 @@ export function ChargingAnalysisDashboard({
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
           <p className="text-sm text-iv-text">
             <span className="font-bold text-iv-red">
-              Charging 80-100% wastes {formatSmartDuration(data.wasted_minutes_80_100)}utes
+              Charging 80-100% wastes {formatSmartDuration(data.wasted_minutes_80_100)} per session
             </span>{" "}
             per session (≈{data.wasted_pct}% of total charging time). Consider
             stopping at 80% for daily drives.

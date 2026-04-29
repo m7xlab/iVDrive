@@ -840,9 +840,8 @@ async def get_trip_elevation_stats(
         raise HTTPException(status_code=404, detail="Trip not found")
 
     # Fetch start and end elevations concurrently
-    start_elev_task = _get_nearest_elevation_async(trip.start_lat, trip.start_lon, vehicle.id, db)
-    end_elev_task = _get_nearest_elevation_async(trip.end_lat, trip.end_lon, vehicle.id, db)
-    start_elev, end_elev = await asyncio.gather(start_elev_task, end_elev_task)
+    start_elev = await _get_nearest_elevation_async(trip.start_lat, trip.start_lon, vehicle.id, db)
+    end_elev = await _get_nearest_elevation_async(trip.end_lat, trip.end_lon, vehicle.id, db)
 
     # Fallback: use 0 if one is missing
     start_elev = start_elev if start_elev is not None else (end_elev or 0)
@@ -872,7 +871,7 @@ async def _get_nearest_elevation_async(lat: float, lon: float, vehicle_id: uuid.
                   AND latitude IS NOT NULL
                   AND longitude IS NOT NULL
                 ORDER BY (
-                    (latitude - :lat)^2 + (longitude - :lon)^2
+                    POWER(latitude - :lat, 2) + POWER(longitude - :lon, 2)
                 ) ASC
                 LIMIT 1
             """),
