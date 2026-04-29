@@ -1093,6 +1093,11 @@ async def get_charging_curve_integrals_v2(
         .group_by("bracket")
         .order_by("bracket")
     )
+    if from_date:
+        stmt_brackets = stmt_brackets.where(ChargingCurve.captured_at >= from_date)
+    if to_date:
+        stmt_brackets = stmt_brackets.where(ChargingCurve.captured_at <= to_date)
+
     res_brackets = await db.execute(stmt_brackets)
 
     bracket_map = {row.bracket: row for row in res_brackets.all()}
