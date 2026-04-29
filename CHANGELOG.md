@@ -1,7 +1,13 @@
 # Changelog
 ## [Unreleased] - 2026-04-29
 ### Fixed
-- Driving Statistics: Energy Used now correctly shows values for days with charging activity (e.g. Apr 25: 1.16 kWh). Previously used `v_daily_consumption` view which was missing days where charging happened during a parked period. Now uses `trips.kwh_consumed` directly.
+- Driving Statistics: Energy Used now correctly shows values for days with charging activity (e.g. Apr 25: 1.16 kWh). Previously used `v_daily_consumption` view which missed days where charging happened during a parked period. Now uses `trips.kwh_consumed` directly.
+- Charging Curve Integrals: Bracket aggregation queries (`stmt_brackets`) were ignoring `from_date`/`to_date` filters — totals showed all-time values (e.g. 1237 kWh, 3715 min) instead of period-specific data.
+- TripElevationCard: Card expected non-existent API fields (`position_count`, `uphill_kwh`, `downhill_regen_kwh`, `net_kwh_per_100km`) causing crash on every trip click. Now matches actual endpoint response (`elevation_gain_m`, `elevation_loss_m`, `net_elevation_m`).
+- Elevation endpoint: Replaced `asyncio.gather()` with sequential queries on same `AsyncSession` (race condition fix). Replaced `^` SQL operator with `POWER()` for portable exponentiation.
+
+### Added
+- Smart Duration Formatter: All statistics dashboards now auto-scale time durations to most readable unit: `55 min | 1.5 hr | 1.4 days | 2.3 weeks | 1.2 months`. Applied to all pages: Charging Curve, Charging Analysis, Charging Curve Integrals, Car Overview, Pulse, Movement, Driving Dashboard, Driving Statistics, Driving Summary, Mileage KM, and Trips.
 
 
 All notable changes to the iVDrive project will be documented in this file.
