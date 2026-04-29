@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import uuid
@@ -50,6 +51,7 @@ from app.schemas.telemetry import (
     StateBandItem,
     StatisticsPeriod,
     TripItem,
+    TripElevationStats,
     TripAnalyticsItem,
     VehicleStateItem,
     WLTPResponse,
@@ -814,6 +816,79 @@ async def get_trips_analytics(
         for row in rows
     ]
 
+
+@router.get("/{vehicle_id}/trips/{trip_id}/elevation-stats", response_model=TripElevationStats)
+async def get_trip_elevation_stats(
+    vehicle_id: uuid.UUID,
+    trip_id: int,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns elevation stats for a single trip, computing start/end elevation
+    from the nearest vehicle_positions.elevation_m using asyncio.gather().
+    """
+    from sqlalchemy import text
+
+    await _get_user_vehicle(vehicle_id, user, db)
+
+    trip_res = await db.execute(
+        select(Trip).where(Trip.id == trip_id, Trip.user_vehicle_id == vehicle_id)
+    )
+    trip = trip_res.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    async def _fetch_elevation(lat: float | None, lon: float | None) -> float | None:
+        if lat is None or lon is None:
+            return None
+        try:
+            res = await db.execute(
+                text("""
+                    SELECT elevation_m FROM vehicle_positions
+                    WHERE user_vehicle_id = :vid
+                      AND elevation_m IS NOT NULL
+                      AND latitude IS NOT NULL
+                      AND longitude IS NOT NULL
+                    ORDER BY ((latitude - :lat)^2 + (longitude - :lon)^2) ASC
+                    LIMIT 1
+                """),
+                {"vid": str(vehicle_id), "lat": lat, "lon": lon},
+            )
+            row = res.first()
+            return float(row[0]) if row else None
+        except Exception:
+            return None
+
+    start_elev, end_elev = await asyncio.gather(
+        _fetch_elevation(trip.start_lat, trip.start_lon),
+        _fetch_elevation(trip.end_lat, trip.end_lon),
+    )
+
+    if start_elev is None and end_elev is not None:
+        start_elev = end_elev
+    elif end_elev is None and start_elev is not None:
+        end_elev = start_elev
+    elif start_elev is None and end_elev is None:
+        start_elev = 0.0
+        end_elev = 0.0
+
+    net = (end_elev or 0) - (start_elev or 0)
+    if net >= 0:
+        gain = net
+        loss = 0.0
+    else:
+        gain = 0.0
+        loss = abs(net)
+
+    return TripElevationStats(
+        trip_id=trip_id,
+        start_elevation_m=start_elev,
+        end_elevation_m=end_elev,
+        elevation_gain_m=round(gain, 1),
+        elevation_loss_m=round(loss, 1),
+        net_elevation_m=round(net, 1),
+    )
 
 
 @router.get("/{vehicle_id}/positions", response_model=list[PositionItem])

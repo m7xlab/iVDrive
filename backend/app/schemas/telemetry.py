@@ -64,6 +64,18 @@ class TripItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TripElevationStats(BaseModel):
+    """Elevation stats for a single trip (start/end elevation from nearest vehicle_positions)."""
+    trip_id: int
+    start_elevation_m: float | None = None
+    end_elevation_m: float | None = None
+    elevation_gain_m: float = 0.0
+    elevation_loss_m: float = 0.0
+    net_elevation_m: float = 0.0
+
+    model_config = {"from_attributes": True}
+
+
 class TripAnalyticsItem(BaseModel):
     trip_id: int
     start_time: datetime
