@@ -904,6 +904,8 @@ async def get_hvac_isolation(
 @router.get("/{vehicle_id}/analytics/hvac-cost")
 async def get_hvac_cost(
     vehicle_id: UUID,
+    limit: int = Query(default=100, ge=1, le=10000),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -940,7 +942,7 @@ async def get_hvac_cost(
         Trip.kwh_consumed > 0,
         Trip.avg_temp_celsius.is_not(None),
         Trip.end_date.is_not(None),
-    )
+    ).order_by(Trip.start_date.desc()).limit(limit).offset(offset)
     res = await db.execute(stmt)
     rows = res.fetchall()
 
