@@ -12,13 +12,13 @@ export function formatSmartDuration(minutes: number): string {
 
   if (minutes < 1) {
     const secs = Math.round(minutes * 60);
-    return `${secs}s`;
+    return `${secs} sec`;
   }
   if (minutes < 60) {
-    return `${Math.round(minutes)}m`;
+    return `${Math.round(minutes)} min`;
   }
   if (minutes < 1440) {
-    return `${(minutes / 60).toFixed(1)}h`;
+    return `${(minutes / 60).toFixed(1)} hr`;
   }
   if (minutes < 10080) {
     return `${(minutes / 1440).toFixed(1)} days`;
