@@ -332,6 +332,7 @@ class ChargingCurve(Base):
     __tablename__ = "charging_curves"
     __table_args__ = (
         UniqueConstraint("user_vehicle_id", "captured_at", name="uq_charging_curves_vehicle_captured"),
+        Index("ix_charging_curves_vehicle_captured", "user_vehicle_id", "captured_at"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
