@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Loader2, Gauge } from "lucide-react";
 import {
   BarChart,
@@ -69,37 +70,36 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
     );
   }
 
-  // Flatten grid for bar chart view
+  // Flatten grid for bar chart view — use null coalescing for safety
   const chartData = data.grid
-    .filter((g) => g.avg_kwh_100km !== null)
+    .filter((g) => g.avg_kwh_100km != null)
     .map((g) => ({
       name: `${g.speed_label} / ${g.temp_label}`,
-      avg_kwh_100km: g.avg_kwh_100km,
+      avg_kwh_100km: g.avg_kwh_100km as number,
       trip_count: g.trip_count,
       speed: g.speed_category,
       temp: g.temp_category,
     }));
 
-  // Get min/max for color scaling
-  const allVals = chartData.flatMap((d) => d.avg_kwh_100km ? [d.avg_kwh_100km] : []);
-  const minVal = Math.min(...allVals);
-  const maxVal = Math.max(...allVals);
-
-  const getColor = (val: number) => {
-    if (!val) return "#6b7280";
-    const t = (val - minVal) / (maxVal - minVal);
+  // Get min/max for color scaling (guard against empty chartData)
+  const allVals = chartData.map((d) => d.avg_kwh_100km).filter((v) => v > 0);
+  const minVal = allVals.length > 0 ? Math.min(...allVals) : 0;
+  const maxVal = allVals.length > 0 ? Math.max(...allVals) : 1;
+  const getColor = (val: number | null | undefined): string => {
+    if (val == null || val <= 0 || maxVal === minVal) return "#6b7280";
+    const t = Math.max(0, Math.min(1, (val - minVal) / (maxVal - minVal)));
     // green (best) → yellow → red (worst)
     if (t < 0.5) {
       const r = Math.round(34 + (234 - 34) * t * 2);
-      const g = Math.round(197 - 197 * t * 2 + 94 * t * 2);
+      const gv = Math.round(197 - 197 * t * 2 + 94 * t * 2);
       const b = Math.round(37 + 37 * t * 2);
-      return `rgb(${r},${g},${b})`;
+      return `rgb(${r},${gv},${b})`;
     } else {
       const t2 = (t - 0.5) * 2;
       const r = Math.round(234 + (239 - 234) * t2);
-      const g = Math.round(68 - 68 * t2);
+      const gv = Math.round(68 - 68 * t2);
       const b = Math.round(68 + 68 * t2);
-      return `rgb(${r},${g},${b})`;
+      return `rgb(${r},${gv},${b})`;
     }
   };
 
@@ -115,6 +115,7 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
         </p>
 
         {/* Heatmap-style grid as colored bars */}
+        <ErrorBoundary>
         <div className="h-80 w-full mb-6">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 80 }}>
@@ -124,18 +125,19 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
               <Tooltip
                 contentStyle={{ backgroundColor: "var(--iv-bg)", border: "1px solid var(--iv-border)", borderRadius: "8px" }}
                 itemStyle={{ color: "var(--iv-text)" }}
-                formatter={(value: number, name: string, props: any) => [`${value} kWh/100km (${props.payload?.trip_count ?? 0} trips)`, "Efficiency"]}
               />
               <Bar dataKey="avg_kwh_100km" name="kWh/100km" radius={[4, 4, 0, 0]}>
                 {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={getColor(entry.avg_kwh_100km!)} />
+                  <Cell key={`cell-${index}`} fill={getColor(entry.avg_kwh_100km ?? null)} />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
+        </ErrorBoundary>
 
         {/* Color legend */}
+        <ErrorBoundary>
         <div className="flex items-center justify-between text-xs text-iv-text-muted mb-4">
           <span>Best efficiency</span>
           <div className="flex items-center gap-1">
@@ -143,8 +145,10 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
           </div>
           <span>Worst efficiency</span>
         </div>
+        </ErrorBoundary>
 
         {/* Matrix as table */}
+        <ErrorBoundary>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
@@ -165,11 +169,11 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
                       <td key={ti} className="text-center p-2">
                         <span
                           className="inline-block px-2 py-1 rounded text-xs font-bold"
-                          style={{ backgroundColor: val ? getColor(val) + "33" : "transparent", color: val ? getColor(val) : "var(--iv-muted)" }}
+                          style={{ backgroundColor: val != null ? getColor(val) + "33" : "transparent", color: val != null ? getColor(val) : "var(--iv-muted)" }}
                         >
-                          {val ? `${val}` : "—"}
+                          {val != null ? `${val}` : "—"}
                         </span>
-                        {count > 0 && <span className="block text-[10px] text-iv-text-muted">{count} trips</span>}
+                        {count != null && count > 0 && <span className="block text-[10px] text-iv-text-muted">{count} trips</span>}
                       </td>
                     );
                   })}
@@ -178,6 +182,7 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
             </tbody>
           </table>
         </div>
+        </ErrorBoundary>
       </div>
     </div>
   );

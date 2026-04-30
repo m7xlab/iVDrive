@@ -1,7 +1,26 @@
 # Changelog
+## [Unreleased] - 2026-04-30
+### Fixed
+- Charging Curve Integrals: `total_energy_kwh` display now rounded to 2 decimal places — eliminates `29.130000000000003 kWh` float artifact.
+- ICE vs EV: Added proper spacing in savings line — `€ saved` and `€/kWh`, `€/L` instead of `€saved` and `0.3499€/kWh`.
+- ICE vs EV: Rate values now display at 2 decimal precision max (was 4 decimals like `0.1955€/kWh`).
+- Car Overview: Vampire drain rate display reduced from 4 to 2 decimal places on hourly rate.
+- Movement Dashboard: GPS coordinates in Top Places now display 5 decimal places (~1m precision) instead of 4 (~11m precision).
+- Route Efficiency: Start/end locations now resolved from `geocoded_locations` cache (Nominatim reverse-geocoded names like "Konstitucijos pr.") when available, fallback to coordinates. Previously always showed raw lat/lon pairs.
+- SpeedTempMatrixDashboard: Fixed `if (!val)` truthy check that incorrectly returned gray for valid `0` values — changed to `if (val === 0)`. Also removed `g` variable shadowing in closures and added explicit null coalescing (`as number`) for `avg_kwh_100km`.
+
+### Known Issues
+- Speed × Temp tab: Calibration thresholds (`speed_city_threshold_kmh`, `temp_cold_max_celsius` etc.) are NULL for all vehicles in production DB — all speed/temp categorization falls back to defaults (50/90 km/h, 5/15/25°C). Data may appear overly aggregated. Fix requires either setting per-vehicle calibration in Settings or adding sensible defaults to the calibration lookup.
+
 ## [Unreleased] - 2026-04-29
 ### Fixed
-- Driving Statistics: Energy Used now correctly shows values for days with charging activity (e.g. Apr 25: 1.16 kWh). Previously used `v_daily_consumption` view which was missing days where charging happened during a parked period. Now uses `trips.kwh_consumed` directly.
+- Driving Statistics: Energy Used now correctly shows values for days with charging activity (e.g. Apr 25: 1.16 kWh). Previously used `v_daily_consumption` view which missed days where charging happened during a parked period. Now uses `trips.kwh_consumed` directly.
+- Charging Curve Integrals: Bracket aggregation queries (`stmt_brackets`) were ignoring `from_date`/`to_date` filters — totals showed all-time values (e.g. 1237 kWh, 3715 min) instead of period-specific data.
+- TripElevationCard: Card expected non-existent API fields (`position_count`, `uphill_kwh`, `downhill_regen_kwh`, `net_kwh_per_100km`) causing crash on every trip click. Now matches actual endpoint response (`elevation_gain_m`, `elevation_loss_m`, `net_elevation_m`).
+- Elevation endpoint: Replaced `asyncio.gather()` with sequential queries on same `AsyncSession` (race condition fix). Replaced `^` SQL operator with `POWER()` for portable exponentiation.
+
+### Added
+- Smart Duration Formatter: All statistics dashboards now auto-scale time durations to most readable unit: `55 min | 1.5 hr | 1.4 days | 2.3 weeks | 1.2 months`. Applied to all pages: Charging Curve, Charging Analysis, Charging Curve Integrals, Car Overview, Pulse, Movement, Driving Dashboard, Driving Statistics, Driving Summary, Mileage KM, and Trips.
 
 
 All notable changes to the iVDrive project will be documented in this file.

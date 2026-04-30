@@ -1,7 +1,8 @@
 import asyncio
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from uuid import UUID
 from typing import Any
+import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
@@ -231,37 +232,93 @@ async def get_battery_health(
     user: User = Depends(get_current_user),
     limit: int = Query(default=100, ge=1, le=10000)
 ):
-    """Return the latest battery health metrics including 12V and cell voltages."""
-    await get_user_vehicle(user.id, vehicle_id, db)
+    """Return battery health metrics including HV system, cell voltages, and derived SoH.
     
-    stmt = (
+    Provides two SoH values:
+    - skoda_soh_pct: raw hv_battery_soh from Skoda BMS (may be stale/cached)
+    - derived_soh_pct: our own estimate from charging sessions (energy / delta_soc)
+    - derived_capacity_kwh: our estimated current full capacity in kWh
+    """
+    await get_user_vehicle(user.id, vehicle_id, db)
+
+    # Fetch latest Skoda BMS reading
+    stmt_bh = (
         select(BatteryHealth)
         .where(BatteryHealth.user_vehicle_id == vehicle_id)
         .order_by(BatteryHealth.captured_at.desc())
-        .limit(limit)
+        .limit(1)
     )
-    result = await db.execute(stmt)
-    records = result.scalars().all()
-    
-    return [
-        {
-            "captured_at": r.captured_at.isoformat(),
-            "twelve_v_battery_voltage": r.twelve_v_battery_voltage,
-            "twelve_v_battery_soc": r.twelve_v_battery_soc,
-            "twelve_v_battery_soh": r.twelve_v_battery_soh,
-            "hv_battery_voltage": r.hv_battery_voltage,
-            "hv_battery_current": r.hv_battery_current,
-            "hv_battery_temperature": r.hv_battery_temperature,
-            "hv_battery_soh": r.hv_battery_soh,
-            "hv_battery_degradation_pct": r.hv_battery_degradation_pct,
-            "cell_voltage_min": r.cell_voltage_min,
-            "cell_voltage_max": r.cell_voltage_max,
-            "cell_voltage_avg": r.cell_voltage_avg,
-            "cell_temperature_avg": r.cell_temperature_avg,
-            "imbalance_mv": r.imbalance_mv,
-        }
-        for r in records
-    ]
+    bh_result = await db.execute(stmt_bh)
+    latest_bh = bh_result.scalar_one_or_none()
+
+    # Fetch factory battery capacity for this vehicle
+    vehicle_stmt = select(UserVehicle.battery_capacity_kwh).where(UserVehicle.id == vehicle_id)
+    vehicle_result = await db.execute(vehicle_stmt)
+    factory_kwh = vehicle_result.scalar_one_or_none()
+
+    # Compute SoH estimates from charging sessions
+    # Filter: ΔSOC 15-65% (avoid short charges and regen-heavy large charges)
+    # Cap: estimated capacity ≤ 103% of factory (excludes regen-inflated values)
+    soh_stmt = text("""
+        SELECT 
+            session_start::date as charge_date,
+            start_level,
+            end_level,
+            energy_kwh,
+            ROUND((energy_kwh / ((end_level - start_level)/100.0))::numeric, 2) as estimated_kwh,
+            ROUND(((energy_kwh / ((end_level - start_level)/100.0)) / :factory_kwh * 100)::numeric, 1) as soh_pct,
+            (end_level - start_level) as delta_soc
+        FROM charging_sessions
+        WHERE user_vehicle_id = :vehicle_id
+          AND end_level IS NOT NULL AND start_level IS NOT NULL
+          AND energy_kwh IS NOT NULL AND energy_kwh > 0
+          AND (end_level - start_level) BETWEEN 15 AND 65
+        ORDER BY session_start DESC
+        LIMIT 50
+    """)
+    soh_result = await db.execute(soh_stmt, {"vehicle_id": str(vehicle_id), "factory_kwh": factory_kwh})
+    soh_estimates = soh_result.fetchall()
+
+    # Build monthly averaged curve (last 6 months)
+    curve_data = []
+    if soh_estimates:
+        # Filter valid estimates (≤ 103% of factory — excludes regen noise)
+        valid = [r for r in soh_estimates if r.estimated_kwh and r.estimated_kwh <= float(factory_kwh or 0) * 1.03]
+        if valid:
+            # Group by month
+            from collections import defaultdict
+            by_month: dict[str, list[float]] = defaultdict(list)
+            for r in valid:
+                month = str(r.charge_date)[:7]  # "YYYY-MM"
+                by_month[month].append(float(r.estimated_kwh))
+            for month in sorted(by_month.keys()):
+                vals = by_month[month]
+                avg_kwh = round(sum(vals) / len(vals), 2)
+                soh_pct = round((avg_kwh / float(factory_kwh or 1)) * 100, 1) if factory_kwh else None
+                curve_data.append({
+                    "month": month,
+                    "estimated_kwh": avg_kwh,
+                    "soh_pct": soh_pct,
+                    "sample_count": len(vals),
+                })
+
+    # Latest derived SoH (most recent valid estimate)
+    latest_derived = None
+    if soh_estimates:
+        for r in soh_estimates:
+            if r.estimated_kwh and r.estimated_kwh <= float(factory_kwh or 0) * 1.03:
+                latest_derived = round((float(r.estimated_kwh) / float(factory_kwh or 1)) * 100, 1) if factory_kwh else None
+                break
+
+    return {
+        "skoda_soh_pct": latest_bh.hv_battery_soh if latest_bh else None,
+        "skoda_degradation_pct": latest_bh.hv_battery_degradation_pct if latest_bh else None,
+        "factory_capacity_kwh": factory_kwh,
+        "derived_soh_pct": latest_derived,
+        "derived_capacity_kwh": soh_estimates[0].estimated_kwh if soh_estimates and latest_derived else None,
+        "total_soh_estimates": len(soh_estimates),
+        "curve": curve_data,
+    }
 
 @router.get("/{vehicle_id}/analytics/power-usage")
 async def get_power_usage(
@@ -454,6 +511,13 @@ async def get_movement_stats(
 ):
     """Returns accurate time-budget breakdown using real vehicle_states and charging_states."""
     await get_user_vehicle(user.id, vehicle_id, db)
+
+    # Ensure from_date/to_date are timezone-aware (UTC) so comparisons with
+    # timezone-aware DB columns (vehicle_states, charging_states) don't fail
+    if from_date.tzinfo is None:
+        from_date = from_date.replace(tzinfo=timezone.utc)
+    if to_date.tzinfo is None:
+        to_date = to_date.replace(tzinfo=timezone.utc)
 
     # Query vehicle states in range
     vs_stmt = (
@@ -1146,7 +1210,30 @@ async def get_charging_curve_integrals_v2(
         wasted_minutes = round(wasted_row.count * 5) if wasted_row and wasted_row.count else 0
 
     total_energy = sum(b["energy_kwh"] for b in bracket_defs)
-    total_minutes = sum(b["minutes"] for b in bracket_defs)
+
+    # Compute overall session duration from earliest→latest timestamp across all brackets.
+    # This is consistent with wasted_minutes (which also uses actual timestamps), unlike
+    # the sum of bracket estimates which can be much smaller than the real session span
+    # (e.g. fast 0-80% brackets + slow 80-100% bracket → wasted_pct > 100%).
+    overall_min_ts = None
+    overall_max_ts = None
+    for row in bracket_map.values():
+        if hasattr(row, 'min_time') and hasattr(row, 'max_time') and row.min_time and row.max_time:
+            mt = row.min_time
+            mx = row.max_time
+            if mt.tzinfo is not None and mx.tzinfo is None:
+                mx = mx.replace(tzinfo=mt.tzinfo)
+            elif mt.tzinfo is None and mx.tzinfo is not None:
+                mt = mt.replace(tzinfo=mx.tzinfo)
+            if overall_min_ts is None or mt < overall_min_ts:
+                overall_min_ts = mt
+            if overall_max_ts is None or mx > overall_max_ts:
+                overall_max_ts = mx
+
+    if overall_min_ts is not None and overall_max_ts is not None and overall_max_ts > overall_min_ts:
+        total_minutes = round((overall_max_ts - overall_min_ts).total_seconds() / 60.0)
+    else:
+        total_minutes = sum(b["minutes"] for b in bracket_defs)
 
     if total_minutes == 0:
         return {
@@ -1236,11 +1323,23 @@ async def get_elevation_penalty(
             "message": "No trips with GPS data available for elevation analysis."
         }
 
-    # Batch-fetch all elevations using direct SQL (single round-trip per trip, 2 coords)
+    # Batch-fetch all elevations concurrently (single round-trip per trip via cache)
+    elev_futures = [
+        _get_nearest_elevation(trip.start_lat, trip.start_lon, vehicle_id, db)
+        for trip in trips
+    ] + [
+        _get_nearest_elevation(trip.end_lat, trip.end_lon, vehicle_id, db)
+        for trip in trips
+    ]
+    elev_results = await asyncio.gather(*elev_futures)
+    n = len(trips)
+    start_elevs = elev_results[:n]
+    end_elevs   = elev_results[n:]
+
     results = []
-    for trip in trips:
-        start_elev = await _get_nearest_elevation(trip.start_lat, trip.start_lon, vehicle_id, db)
-        end_elev   = await _get_nearest_elevation(trip.end_lat,   trip.end_lon,   vehicle_id, db)
+    for i, trip in enumerate(trips):
+        start_elev = start_elevs[i]
+        end_elev   = end_elevs[i]
 
         if start_elev is None and end_elev is None:
             # No elevation data at all for this trip — skip it
@@ -1718,6 +1817,22 @@ async def get_ice_tco(
 # =============================================================================
 # TASK 8: Route-Specific Efficiency Profiling
 # =============================================================================
+async def _reverse_geocode(lat: float, lon: float, db: AsyncSession) -> str:
+    """Look up a location name from geocoded_locations cache, or return a coords fallback."""
+    from decimal import Decimal
+    from sqlalchemy import text
+    # Round to 5 decimal places for consistent cache key
+    lat_r = Decimal(str(lat)).quantize(Decimal("1.00000"))
+    lon_r = Decimal(str(lon)).quantize(Decimal("1.00000"))
+    stmt = text(
+        "SELECT display_name FROM geocoded_locations WHERE latitude = :lat AND longitude = :lon LIMIT 1"
+    )
+    row = (await db.execute(stmt, {"lat": lat_r, "lon": lon_r})).fetchone()
+    if row and row[0]:
+        return row[0]
+    return f"{lat:.5f}, {lon:.5f}"
+
+
 def _geohash(lat: float, lon: float, precision: int = 4) -> str:
     """Simple geohash: rounded lat/lon."""
     return f"{round(lat, precision)}_{round(lon, precision)}"
@@ -1747,17 +1862,46 @@ async def get_route_efficiency(
     res = await db.execute(stmt)
     trips = res.scalars().all()
 
+    # Pre-geocode all unique start/end coordinates in one DB round-trip
+    from decimal import Decimal as DDec
+    unique_coords = list({
+        (DDec(str(round(trip.start_lat, 5))).quantize(DDec("1.00000")),
+         DDec(str(round(trip.start_lon, 5))).quantize(DDec("1.00000")))
+        for trip in trips
+    } | {
+        (DDec(str(round(trip.end_lat, 5))).quantize(DDec("1.00000")),
+         DDec(str(round(trip.end_lon, 5))).quantize(DDec("1.00000")))
+        for trip in trips
+    })
+    coord_to_name: dict[tuple[float, float], str] = {}
+    if unique_coords:
+        # Find nearest geocoded location for each trip coordinate (within ~100m / 0.001°)
+        for lat, lon in unique_coords:
+            nearest = await db.execute(text(
+                """SELECT display_name FROM geocoded_locations
+                   WHERE ABS(latitude - :lat) < 0.002 AND ABS(longitude - :lon) < 0.002
+                   ORDER BY (ABS(latitude - :lat) + ABS(longitude - :lon)) ASC LIMIT 1"""
+            ), {"lat": float(lat), "lon": float(lon)})
+            row = nearest.fetchone()
+            coord_to_name[(round(float(lat), 5), round(float(lon), 5))] = (
+                row[0] if row and row[0] else f"{float(lat):.5f}, {float(lon):.5f}"
+            )
+
     route_groups: dict[str, dict] = {}
 
     for trip in trips:
         start_gh = _geohash(trip.start_lat, trip.start_lon)
         end_gh = _geohash(trip.end_lat, trip.end_lon)
         route_key = f"{start_gh}->{end_gh}"
+        start_key = (round(trip.start_lat, 5), round(trip.start_lon, 5))
+        end_key = (round(trip.end_lat, 5), round(trip.end_lon, 5))
+        start_name = coord_to_name.get(start_key, f"{trip.start_lat:.5f}, {trip.start_lon:.5f}")
+        end_name = coord_to_name.get(end_key, f"{trip.end_lat:.5f}, {trip.end_lon:.5f}")
 
         if route_key not in route_groups:
             route_groups[route_key] = {
-                "start_geo": f"{trip.start_lat:.4f}, {trip.start_lon:.4f}",
-                "end_geo": f"{trip.end_lat:.4f}, {trip.end_lon:.4f}",
+                "start_name": start_name,
+                "end_name": end_name,
                 "efficiencies": [],
                 "temps": [],
                 "distances": [],
@@ -1778,9 +1922,9 @@ async def get_route_efficiency(
         score = max(0, 100 - (avg_eff - 12) * 10) if avg_eff > 0 else 50
 
         results.append({
-            "route_key": route_key,
-            "start_location": data["start_geo"],
-            "end_location": data["end_geo"],
+            "route_key": f"{data['start_name']} → {data['end_name']}",
+            "start_location": data["start_name"],
+            "end_location": data["end_name"],
             "trip_count": len(effs),
             "avg_kwh_100km": avg_eff,
             "min_kwh_100km": round(min(effs), 1) if effs else 0,
@@ -1865,8 +2009,18 @@ async def get_predictive_soc(
             avg_efficiency = 8.0  # default km/kWh fallback
         remaining_range_km = (current_soc / 100) * battery_kwh * avg_efficiency
 
-    # HC-029: target_distance_km cap — configurable via calibration (charger_power_kw slot)
-    target_distance_km = min(remaining_range_km, cal["charger_power_kw"] * 9.09)  # ~200km default for 22kW
+    # HC-029 FIX: target_distance_km should be the *planned* trip distance, not remaining_range_km.
+    # remaining_range_km = how far the car can still drive (not how far the planned trip is).
+    # Using remaining_range_km as target_distance causes arrival SOC to be calculated for
+    # driving the full remaining range rather than the actual planned trip, producing
+    # wrong (often very low) arrival SOC for short trips.
+    # Use the average of recent trip distances as a realistic estimate of planned trip length.
+    if trips and len(trips) > 0:
+        recent_distances = [t.distance_km for t in trips[:10] if t.distance_km and t.distance_km > 0]
+        avg_trip_distance = sum(recent_distances) / len(recent_distances) if recent_distances else (cal["charger_power_kw"] * 9.09)
+    else:
+        avg_trip_distance = cal["charger_power_kw"] * 9.09
+    target_distance_km = avg_trip_distance
 
     if not trips:
         return {
