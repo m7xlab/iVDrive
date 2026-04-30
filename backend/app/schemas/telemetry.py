@@ -193,3 +193,9 @@ class PulseResponse(BaseModel):
     is_online: bool
     charging_power_kw: float
     remaining_charge_time_min: int
+
+
+class TripElevationStats(BaseModel):
+    elevation_gain_m: float
+    elevation_loss_m: float
+    net_elevation_m: float

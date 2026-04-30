@@ -52,6 +52,7 @@ from app.schemas.telemetry import (
     StatisticsPeriod,
     TripItem,
     TripAnalyticsItem,
+    TripElevationStats,
     VehicleStateItem,
     WLTPResponse,
 )
@@ -816,7 +817,7 @@ async def get_trips_analytics(
     ]
 
 
-@router.get("/{vehicle_id}/trips/{trip_id}/elevation-stats")
+@router.get("/{vehicle_id}/trips/{trip_id}/elevation-stats", response_model=TripElevationStats)
 async def get_trip_elevation_stats(
     vehicle_id: uuid.UUID,
     trip_id: int,
