@@ -1819,13 +1819,14 @@ async def get_route_efficiency(
     })
     coord_to_name: dict[tuple[float, float], str] = {}
     if unique_coords:
-        # Safe bindparam-based lookup — avoids string interpolation in SQL
+        # Use safe unnest approach — asyncpg does not support tuple-list bind params
+        lats = [float(lat) for lat, lon in unique_coords]
+        lons = [float(lon) for lat, lon in unique_coords]
         lookup_stmt = text(
             "SELECT latitude, longitude, display_name FROM geocoded_locations "
-            "WHERE (latitude, longitude) IN :coord_pairs"
+            "WHERE (latitude = ANY(:lats) AND longitude = ANY(:lons))"
         )
-        coord_pairs = [ (float(lat), float(lon)) for lat, lon in unique_coords ]
-        rows = (await db.execute(lookup_stmt, {"coord_pairs": coord_pairs})).fetchall()
+        rows = (await db.execute(lookup_stmt, {"lats": lats, "lons": lons})).fetchall()
         for row in rows:
             coord_to_name[(round(row[0], 5), round(row[1], 5))] = row[2] if row[2] else f"{row[0]:.5f}, {row[1]:.5f}"
 
