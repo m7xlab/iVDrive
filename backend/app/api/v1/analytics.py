@@ -1819,14 +1819,13 @@ async def get_route_efficiency(
     })
     coord_to_name: dict[tuple[float, float], str] = {}
     if unique_coords:
-        lat_placeholder = ", ".join([f"(:lat{i}), (:lon{i})" for i in range(len(unique_coords))])
-        where_clause = " OR ".join([f"(latitude = :lat{i} AND longitude = :lon{i})" for i in range(len(unique_coords))])
-        lookup_stmt = text(f"SELECT latitude, longitude, display_name FROM geocoded_locations WHERE {where_clause}")
-        params = {}
-        for i, (lat, lon) in enumerate(unique_coords):
-            params[f"lat{i}"] = float(lat)
-            params[f"lon{i}"] = float(lon)
-        rows = (await db.execute(lookup_stmt, params)).fetchall()
+        # Safe bindparam-based lookup — avoids string interpolation in SQL
+        lookup_stmt = text(
+            "SELECT latitude, longitude, display_name FROM geocoded_locations "
+            "WHERE (latitude, longitude) IN :coord_pairs"
+        )
+        coord_pairs = [ (float(lat), float(lon)) for lat, lon in unique_coords ]
+        rows = (await db.execute(lookup_stmt, {"coord_pairs": coord_pairs})).fetchall()
         for row in rows:
             coord_to_name[(round(row[0], 5), round(row[1], 5))] = row[2] if row[2] else f"{row[0]:.5f}, {row[1]:.5f}"
 
