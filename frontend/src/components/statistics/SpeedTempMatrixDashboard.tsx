@@ -71,37 +71,37 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
     );
   }
 
-  // Flatten grid for bar chart view
+  // Flatten grid for bar chart view — use null coalescing for safety
   const chartData = data.grid
-    .filter((g) => g.avg_kwh_100km !== null)
+    .filter((g) => g.avg_kwh_100km != null)
     .map((g) => ({
       name: `${g.speed_label} / ${g.temp_label}`,
-      avg_kwh_100km: g.avg_kwh_100km,
+      avg_kwh_100km: g.avg_kwh_100km as number,
       trip_count: g.trip_count,
       speed: g.speed_category,
       temp: g.temp_category,
     }));
 
   // Get min/max for color scaling (guard against empty chartData)
-  const allVals = chartData.flatMap((d) => d.avg_kwh_100km != null ? [d.avg_kwh_100km] : []);
+  const allVals = chartData.flatMap((d) => [d.avg_kwh_100km]);
   const minVal = allVals.length > 0 ? Math.min(...allVals) : 0;
   const maxVal = allVals.length > 0 ? Math.max(...allVals) : 1;
   const getColor = (val: number) => {
-    if (!val) return "#6b7280";
+    if (val === 0) return "#6b7280";
     if (maxVal === minVal) return "#6b7280";
     const t = (val - minVal) / (maxVal - minVal);
     // green (best) → yellow → red (worst)
     if (t < 0.5) {
       const r = Math.round(34 + (234 - 34) * t * 2);
-      const g = Math.round(197 - 197 * t * 2 + 94 * t * 2);
+      const gv = Math.round(197 - 197 * t * 2 + 94 * t * 2);
       const b = Math.round(37 + 37 * t * 2);
-      return `rgb(${r},${g},${b})`;
+      return `rgb(${r},${gv},${b})`;
     } else {
       const t2 = (t - 0.5) * 2;
       const r = Math.round(234 + (239 - 234) * t2);
-      const g = Math.round(68 - 68 * t2);
+      const gv = Math.round(68 - 68 * t2);
       const b = Math.round(68 + 68 * t2);
-      return `rgb(${r},${g},${b})`;
+      return `rgb(${r},${gv},${b})`;
     }
   };
 
