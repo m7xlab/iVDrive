@@ -196,6 +196,12 @@ class PulseResponse(BaseModel):
 
 
 class TripElevationStats(BaseModel):
-    elevation_gain_m: float
-    elevation_loss_m: float
-    net_elevation_m: float
+    """Elevation stats for a single trip (start/end elevation from nearest vehicle_positions)."""
+    trip_id: int
+    start_elevation_m: float | None = None
+    end_elevation_m: float | None = None
+    elevation_gain_m: float = 0.0
+    elevation_loss_m: float = 0.0
+    net_elevation_m: float = 0.0
+
+    model_config = {"from_attributes": True}
