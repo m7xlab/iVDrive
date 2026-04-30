@@ -1819,19 +1819,17 @@ async def get_route_efficiency(
     })
     coord_to_name: dict[tuple[float, float], str] = {}
     if unique_coords:
-        # Match each (lat, lon) pair exactly — use indexed OR clauses with named bind params
-        conditions = []
-        params = {}
-        for i, (lat, lon) in enumerate(unique_coords):
-            conditions.append(f"(latitude = :lat{i} AND longitude = :lon{i})")
-            params[f"lat{i}"] = float(lat)
-            params[f"lon{i}"] = float(lon)
-        lookup_stmt = text(
-            f"SELECT latitude, longitude, display_name FROM geocoded_locations WHERE {' OR '.join(conditions)}"
-        )
-        rows = (await db.execute(lookup_stmt, params)).fetchall()
-        for row in rows:
-            coord_to_name[(round(row[0], 5), round(row[1], 5))] = row[2] if row[2] else f"{row[0]:.5f}, {row[1]:.5f}"
+        # Find nearest geocoded location for each trip coordinate (within ~100m / 0.001°)
+        for lat, lon in unique_coords:
+            nearest = await db.execute(text(
+                """SELECT display_name FROM geocoded_locations
+                   WHERE ABS(latitude - :lat) < 0.002 AND ABS(longitude - :lon) < 0.002
+                   ORDER BY (ABS(latitude - :lat) + ABS(longitude - :lon)) ASC LIMIT 1"""
+            ), {"lat": float(lat), "lon": float(lon)})
+            row = nearest.fetchone()
+            coord_to_name[(round(float(lat), 5), round(float(lon), 5))] = (
+                row[0] if row and row[0] else f"{float(lat):.5f}, {float(lon):.5f}"
+            )
 
     route_groups: dict[str, dict] = {}
 
