@@ -264,66 +264,80 @@ export function CarOverviewDashboard({
     abortControllerRef.current = controller;
     setLoading(true);
     try {
-      const [b, r, c, bands, range100, wltp, eff, lStep, rStep, oTemp, bTemp, elecCons, vd, pulseData, winterEff] = await Promise.all([
-        api.getBatteryHistory(vehicleId, 10000, fromISO, toISOVal),
-        api.getRangeHistory(vehicleId, 10000, fromISO, toISOVal),
-        api.getChargingHistory(vehicleId, 10000, fromISO, toISOVal),
-        api.getOverviewStateBands(vehicleId, {
-          fromDate: fromISO,
-          toDate: toISOVal,
-          limit: 10000,
-        }),
-        api.getOverviewRangeAt100(vehicleId, {
-          fromDate: fromISO,
-          toDate: toISOVal,
-          limit: 10000,
-        }),
-        api.getOverviewWltp(vehicleId),
-        api.getOverviewEfficiency(vehicleId, {
-          fromDate: fromISO,
-          toDate: toISOVal,
-          limit: 10000,
-        }),
-        api.getLevelsStep(vehicleId, 10000, fromISO, toISOVal),
-        api.getRangesStep(vehicleId, 10000, fromISO, toISOVal),
-        api.getOutsideTemperature(vehicleId, 10000, fromISO, toISOVal),
-        api.getBatteryTemperature(vehicleId, 10000, fromISO, toISOVal),
-        api.getElectricConsumption(vehicleId, 10000, fromISO, toISOVal),
-        api.getVampireDrain(vehicleId).catch(() => null),
-        api.getAnalyticsPulse(vehicleId).catch(() => null),
-        api.getAnalyticsEfficiency(vehicleId).catch(() => []),
-      ]);
-      setBattery(b ?? []);
-      setRange(r ?? []);
-      setCharging(c ?? []);
-      setStateBands(bands ?? []);
-      setRangeAt100(range100 ?? []);
-      setElectricConsumption(elecCons ?? []);
-      setWltpKm(wltp?.wltp_range_km ?? null);
-      setEfficiencyData(eff ?? []);
-      setLevelsStep(lStep ?? []);
-      setRangesStep(rStep ?? []);
-      setOutsideTemp(oTemp ?? []);
-      setBatteryTemp(bTemp ?? []);
-      setVampireDrain(vd ?? null);
-      setPulse(pulseData ?? null);
-      setWinterEfficiency(winterEff ?? []);
+      // 30s timeout — aborts all 13 requests if they hang
+      const timeoutId = setTimeout(() => controller.abort(), 30_000);
+      try {
+        const [b, r, c, bands, range100, wltp, eff, lStep, rStep, oTemp, bTemp, elecCons, vd, pulseData, winterEff] = await Promise.all([
+          api.getBatteryHistory(vehicleId, 10000, fromISO, toISOVal, controller.signal),
+          api.getRangeHistory(vehicleId, 10000, fromISO, toISOVal, controller.signal),
+          api.getChargingHistory(vehicleId, 10000, fromISO, toISOVal, controller.signal),
+          api.getOverviewStateBands(vehicleId, {
+            fromDate: fromISO,
+            toDate: toISOVal,
+            limit: 10000,
+            signal: controller.signal,
+          }),
+          api.getOverviewRangeAt100(vehicleId, {
+            fromDate: fromISO,
+            toDate: toISOVal,
+            limit: 10000,
+            signal: controller.signal,
+          }),
+          api.getOverviewWltp(vehicleId, controller.signal),
+          api.getOverviewEfficiency(vehicleId, {
+            fromDate: fromISO,
+            toDate: toISOVal,
+            limit: 10000,
+            signal: controller.signal,
+          }),
+          api.getLevelsStep(vehicleId, 10000, fromISO, toISOVal, controller.signal),
+          api.getRangesStep(vehicleId, 10000, fromISO, toISOVal, controller.signal),
+          api.getOutsideTemperature(vehicleId, 10000, fromISO, toISOVal, controller.signal),
+          api.getBatteryTemperature(vehicleId, 10000, fromISO, toISOVal, controller.signal),
+          api.getElectricConsumption(vehicleId, 10000, fromISO, toISOVal, controller.signal),
+          api.getVampireDrain(vehicleId, controller.signal).catch(() => null),
+          api.getAnalyticsPulse(vehicleId).catch(() => null),
+          api.getAnalyticsEfficiency(vehicleId).catch(() => []),
+        ]);
+        setBattery(b ?? []);
+        setRange(r ?? []);
+        setCharging(c ?? []);
+        setStateBands(bands ?? []);
+        setRangeAt100(range100 ?? []);
+        setElectricConsumption(elecCons ?? []);
+        setWltpKm(wltp?.wltp_range_km ?? null);
+        setEfficiencyData(eff ?? []);
+        setLevelsStep(lStep ?? []);
+        setRangesStep(rStep ?? []);
+        setOutsideTemp(oTemp ?? []);
+        setBatteryTemp(bTemp ?? []);
+        setVampireDrain(vd ?? null);
+        setPulse(pulseData ?? null);
+        setWinterEfficiency(winterEff ?? []);
+      } finally {
+        clearTimeout(timeoutId);
+        setLoading(false);
+      }
     } catch (err) {
-      console.error('CarOverview Fetch Error:', err);
-      setBattery([]);
-      setRange([]);
-      setCharging([]);
-      setStateBands([]);
-      setRangeAt100([]);
-      setElectricConsumption([]);
-      setWltpKm(null);
-      setEfficiencyData([]);
-      setLevelsStep([]);
-      setRangesStep([]);
-      setOutsideTemp([]);
-      setBatteryTemp([]);
-    } finally {
-      setLoading(false);
+      // AbortError is expected when component unmounts or poll ticks — not a real error
+      const isAbort = err instanceof Error && err.name === "AbortError";
+      if (!isAbort) {
+        console.error("CarOverview Fetch Error:", err);
+      }
+      if (!isAbort) {
+        setBattery([]);
+        setRange([]);
+        setCharging([]);
+        setStateBands([]);
+        setRangeAt100([]);
+        setElectricConsumption([]);
+        setWltpKm(null);
+        setEfficiencyData([]);
+        setLevelsStep([]);
+        setRangesStep([]);
+        setOutsideTemp([]);
+        setBatteryTemp([]);
+      }
     }
   }, [vehicleId, fromISO, toISOVal]);
 
