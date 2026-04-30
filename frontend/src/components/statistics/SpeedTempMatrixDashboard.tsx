@@ -86,7 +86,6 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
   const allVals = chartData.flatMap((d) => d.avg_kwh_100km != null ? [d.avg_kwh_100km] : []);
   const minVal = allVals.length > 0 ? Math.min(...allVals) : 0;
   const maxVal = allVals.length > 0 ? Math.max(...allVals) : 1;
-
   const getColor = (val: number) => {
     if (!val) return "#6b7280";
     const t = (val - minVal) / (maxVal - minVal);

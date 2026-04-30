@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, date, timedelta, timezone
 from uuid import UUID
 from typing import Any
+import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
@@ -1760,6 +1761,22 @@ async def get_ice_tco(
 # =============================================================================
 # TASK 8: Route-Specific Efficiency Profiling
 # =============================================================================
+async def _reverse_geocode(lat: float, lon: float, db: AsyncSession) -> str:
+    """Look up a location name from geocoded_locations cache, or return a coords fallback."""
+    from decimal import Decimal
+    from sqlalchemy import text
+    # Round to 5 decimal places for consistent cache key
+    lat_r = Decimal(str(lat)).quantize(Decimal("1.00000"))
+    lon_r = Decimal(str(lon)).quantize(Decimal("1.00000"))
+    stmt = text(
+        "SELECT display_name FROM geocoded_locations WHERE latitude = :lat AND longitude = :lon LIMIT 1"
+    )
+    row = (await db.execute(stmt, {"lat": lat_r, "lon": lon_r})).fetchone()
+    if row and row[0]:
+        return row[0]
+    return f"{lat:.5f}, {lon:.5f}"
+
+
 def _geohash(lat: float, lon: float, precision: int = 4) -> str:
     """Simple geohash: rounded lat/lon."""
     return f"{round(lat, precision)}_{round(lon, precision)}"
@@ -1789,17 +1806,45 @@ async def get_route_efficiency(
     res = await db.execute(stmt)
     trips = res.scalars().all()
 
+    # Pre-geocode all unique start/end coordinates in one DB round-trip
+    from decimal import Decimal as DDec
+    unique_coords = list({
+        (DDec(str(round(trip.start_lat, 5))).quantize(DDec("1.00000")),
+         DDec(str(round(trip.start_lon, 5))).quantize(DDec("1.00000")))
+        for trip in trips
+    } | {
+        (DDec(str(round(trip.end_lat, 5))).quantize(DDec("1.00000")),
+         DDec(str(round(trip.end_lon, 5))).quantize(DDec("1.00000")))
+        for trip in trips
+    })
+    coord_to_name: dict[tuple[float, float], str] = {}
+    if unique_coords:
+        lat_placeholder = ", ".join([f"(:lat{i}), (:lon{i})" for i in range(len(unique_coords))])
+        where_clause = " OR ".join([f"(latitude = :lat{i} AND longitude = :lon{i})" for i in range(len(unique_coords))])
+        lookup_stmt = text(f"SELECT latitude, longitude, display_name FROM geocoded_locations WHERE {where_clause}")
+        params = {}
+        for i, (lat, lon) in enumerate(unique_coords):
+            params[f"lat{i}"] = float(lat)
+            params[f"lon{i}"] = float(lon)
+        rows = (await db.execute(lookup_stmt, params)).fetchall()
+        for row in rows:
+            coord_to_name[(round(row[0], 5), round(row[1], 5))] = row[2] if row[2] else f"{row[0]:.5f}, {row[1]:.5f}"
+
     route_groups: dict[str, dict] = {}
 
     for trip in trips:
         start_gh = _geohash(trip.start_lat, trip.start_lon)
         end_gh = _geohash(trip.end_lat, trip.end_lon)
         route_key = f"{start_gh}->{end_gh}"
+        start_key = (round(trip.start_lat, 5), round(trip.start_lon, 5))
+        end_key = (round(trip.end_lat, 5), round(trip.end_lon, 5))
+        start_name = coord_to_name.get(start_key, f"{trip.start_lat:.5f}, {trip.start_lon:.5f}")
+        end_name = coord_to_name.get(end_key, f"{trip.end_lat:.5f}, {trip.end_lon:.5f}")
 
         if route_key not in route_groups:
             route_groups[route_key] = {
-                "start_geo": f"{trip.start_lat:.5f}, {trip.start_lon:.5f}",
-                "end_geo": f"{trip.end_lat:.5f}, {trip.end_lon:.5f}",
+                "start_name": start_name,
+                "end_name": end_name,
                 "efficiencies": [],
                 "temps": [],
                 "distances": [],
@@ -1821,8 +1866,8 @@ async def get_route_efficiency(
 
         results.append({
             "route_key": route_key,
-            "start_location": data["start_geo"],
-            "end_location": data["end_geo"],
+            "start_location": data["start_name"],
+            "end_location": data["end_name"],
             "trip_count": len(effs),
             "avg_kwh_100km": avg_eff,
             "min_kwh_100km": round(min(effs), 1) if effs else 0,
