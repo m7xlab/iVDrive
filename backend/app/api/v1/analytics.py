@@ -232,37 +232,93 @@ async def get_battery_health(
     user: User = Depends(get_current_user),
     limit: int = Query(default=100, ge=1, le=10000)
 ):
-    """Return the latest battery health metrics including 12V and cell voltages."""
-    await get_user_vehicle(user.id, vehicle_id, db)
+    """Return battery health metrics including HV system, cell voltages, and derived SoH.
     
-    stmt = (
+    Provides two SoH values:
+    - skoda_soh_pct: raw hv_battery_soh from Skoda BMS (may be stale/cached)
+    - derived_soh_pct: our own estimate from charging sessions (energy / delta_soc)
+    - derived_capacity_kwh: our estimated current full capacity in kWh
+    """
+    await get_user_vehicle(user.id, vehicle_id, db)
+
+    # Fetch latest Skoda BMS reading
+    stmt_bh = (
         select(BatteryHealth)
         .where(BatteryHealth.user_vehicle_id == vehicle_id)
         .order_by(BatteryHealth.captured_at.desc())
-        .limit(limit)
+        .limit(1)
     )
-    result = await db.execute(stmt)
-    records = result.scalars().all()
-    
-    return [
-        {
-            "captured_at": r.captured_at.isoformat(),
-            "twelve_v_battery_voltage": r.twelve_v_battery_voltage,
-            "twelve_v_battery_soc": r.twelve_v_battery_soc,
-            "twelve_v_battery_soh": r.twelve_v_battery_soh,
-            "hv_battery_voltage": r.hv_battery_voltage,
-            "hv_battery_current": r.hv_battery_current,
-            "hv_battery_temperature": r.hv_battery_temperature,
-            "hv_battery_soh": r.hv_battery_soh,
-            "hv_battery_degradation_pct": r.hv_battery_degradation_pct,
-            "cell_voltage_min": r.cell_voltage_min,
-            "cell_voltage_max": r.cell_voltage_max,
-            "cell_voltage_avg": r.cell_voltage_avg,
-            "cell_temperature_avg": r.cell_temperature_avg,
-            "imbalance_mv": r.imbalance_mv,
-        }
-        for r in records
-    ]
+    bh_result = await db.execute(stmt_bh)
+    latest_bh = bh_result.scalar_one_or_none()
+
+    # Fetch factory battery capacity for this vehicle
+    vehicle_stmt = select(UserVehicle.battery_capacity_kwh).where(UserVehicle.id == vehicle_id)
+    vehicle_result = await db.execute(vehicle_stmt)
+    factory_kwh = vehicle_result.scalar_one_or_none()
+
+    # Compute SoH estimates from charging sessions
+    # Filter: ΔSOC 15-65% (avoid short charges and regen-heavy large charges)
+    # Cap: estimated capacity ≤ 103% of factory (excludes regen-inflated values)
+    soh_stmt = text("""
+        SELECT 
+            session_start::date as charge_date,
+            start_level,
+            end_level,
+            energy_kwh,
+            ROUND((energy_kwh / ((end_level - start_level)/100.0))::numeric, 2) as estimated_kwh,
+            ROUND(((energy_kwh / ((end_level - start_level)/100.0)) / :factory_kwh * 100)::numeric, 1) as soh_pct,
+            (end_level - start_level) as delta_soc
+        FROM charging_sessions
+        WHERE user_vehicle_id = :vehicle_id
+          AND end_level IS NOT NULL AND start_level IS NOT NULL
+          AND energy_kwh IS NOT NULL AND energy_kwh > 0
+          AND (end_level - start_level) BETWEEN 15 AND 65
+        ORDER BY session_start DESC
+        LIMIT 50
+    """)
+    soh_result = await db.execute(soh_stmt, {"vehicle_id": str(vehicle_id), "factory_kwh": factory_kwh})
+    soh_estimates = soh_result.fetchall()
+
+    # Build monthly averaged curve (last 6 months)
+    curve_data = []
+    if soh_estimates:
+        # Filter valid estimates (≤ 103% of factory — excludes regen noise)
+        valid = [r for r in soh_estimates if r.estimated_kwh and r.estimated_kwh <= float(factory_kwh or 0) * 1.03]
+        if valid:
+            # Group by month
+            from collections import defaultdict
+            by_month: dict[str, list[float]] = defaultdict(list)
+            for r in valid:
+                month = str(r.charge_date)[:7]  # "YYYY-MM"
+                by_month[month].append(float(r.estimated_kwh))
+            for month in sorted(by_month.keys()):
+                vals = by_month[month]
+                avg_kwh = round(sum(vals) / len(vals), 2)
+                soh_pct = round((avg_kwh / float(factory_kwh or 1)) * 100, 1) if factory_kwh else None
+                curve_data.append({
+                    "month": month,
+                    "estimated_kwh": avg_kwh,
+                    "soh_pct": soh_pct,
+                    "sample_count": len(vals),
+                })
+
+    # Latest derived SoH (most recent valid estimate)
+    latest_derived = None
+    if soh_estimates:
+        for r in soh_estimates:
+            if r.estimated_kwh and r.estimated_kwh <= float(factory_kwh or 0) * 1.03:
+                latest_derived = round((float(r.estimated_kwh) / float(factory_kwh or 1)) * 100, 1) if factory_kwh else None
+                break
+
+    return {
+        "skoda_soh_pct": latest_bh.hv_battery_soh if latest_bh else None,
+        "skoda_degradation_pct": latest_bh.hv_battery_degradation_pct if latest_bh else None,
+        "factory_capacity_kwh": factory_kwh,
+        "derived_soh_pct": latest_derived,
+        "derived_capacity_kwh": soh_estimates[0].estimated_kwh if soh_estimates and latest_derived else None,
+        "total_soh_estimates": len(soh_estimates),
+        "curve": curve_data,
+    }
 
 @router.get("/{vehicle_id}/analytics/power-usage")
 async def get_power_usage(
