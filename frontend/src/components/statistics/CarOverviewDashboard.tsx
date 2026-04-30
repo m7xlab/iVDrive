@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import {
   Wifi,
@@ -254,7 +254,14 @@ export function CarOverviewDashboard({
   const [pulse, setPulse] = useState<PulseData | null>(null);
   const [winterEfficiency, setWinterEfficiency] = useState<EfficiencyDataPoint[]>([]);
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const fetchData = useCallback(async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setLoading(true);
     try {
       const [b, r, c, bands, range100, wltp, eff, lStep, rStep, oTemp, bTemp, elecCons, vd, pulseData, winterEff] = await Promise.all([
@@ -326,7 +333,12 @@ export function CarOverviewDashboard({
     if (!isLive) return;
 
     const interval = setInterval(fetchData, 60000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [fetchData, toISOVal]);
 
   const toggle = (id: StateToggleId) => {
