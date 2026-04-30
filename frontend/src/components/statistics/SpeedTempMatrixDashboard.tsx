@@ -40,7 +40,6 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
       try {
         setLoading(true);
         const res = await api.getSpeedTempMatrix(vehicleId);
-        console.error("[SpeedTempMatrix] raw response:", res);
         setData(res);
       } catch (err) {
         console.error("Failed to fetch speed-temp matrix", err);
