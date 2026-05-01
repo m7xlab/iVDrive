@@ -1,4 +1,13 @@
 # Changelog
+## [Unreleased] - 2026-05-01
+### Fixed
+- MovementDashboard: Remove dead formatDuration() wrapper that divided by 60 before passing to formatSmartDuration, causing time values to display 60x smaller than actual.
+
+### Added
+- BatterySoHDashboard: New dashboard showing battery State of Health (SoH) with degradation curve, calculated vs Skoda-reported SoH.
+- Alembic migrations: battery_soh_estimates table (v1 + v2 chains).
+- Stub migration `d4cb158bda0c`: repairs broken chain — production DB recorded this revision but no migration file existed, causing `alembic upgrade head` to fail with `KeyError: 'd4cb158bda0c'`.
+
 ## [Unreleased] - 2026-04-30
 ### Fixed
 - Charging Curve Integrals: `total_energy_kwh` display now rounded to 2 decimal places — eliminates `29.130000000000003 kWh` float artifact.
