@@ -281,9 +281,25 @@ async def get_battery_health(
 
     # Build monthly averaged curve (last 6 months)
     curve_data = []
+    valid = []
+    latest_derived = None
+    latest_derived_kwh = None
+
+    if not factory_kwh or factory_kwh <= 0:
+        return {
+            "skoda_soh_pct": latest_bh.hv_battery_soh if latest_bh else None,
+            "skoda_degradation_pct": latest_bh.hv_battery_degradation_pct if latest_bh else None,
+            "factory_capacity_kwh": factory_kwh,
+            "derived_soh_pct": None,
+            "derived_capacity_kwh": None,
+            "total_soh_estimates": len(soh_estimates) if soh_estimates else 0,
+            "curve": [],
+        }
+
     if soh_estimates:
         # Filter valid estimates (≤ 103% of factory — excludes regen noise)
-        valid = [r for r in soh_estimates if r.estimated_kwh and factory_kwh and factory_kwh > 0 and float(r.estimated_kwh) <= float(factory_kwh) * 1.03]
+        limit_kwh = float(factory_kwh) * 1.03
+        valid = [r for r in soh_estimates if r.estimated_kwh and float(r.estimated_kwh) <= limit_kwh]
         if valid:
             # Group by month
             from collections import defaultdict
@@ -294,7 +310,7 @@ async def get_battery_health(
             for month in sorted(by_month.keys()):
                 vals = by_month[month]
                 avg_kwh = round(sum(vals) / len(vals), 2)
-                soh_pct = round((avg_kwh / float(factory_kwh)) * 100, 1) if factory_kwh and factory_kwh > 0 else None
+                soh_pct = round((avg_kwh / float(factory_kwh)) * 100, 1)
                 curve_data.append({
                     "month": month,
                     "estimated_kwh": avg_kwh,
@@ -303,14 +319,9 @@ async def get_battery_health(
                 })
 
     # Latest derived SoH (most recent valid estimate)
-    latest_derived = None
-    latest_derived_kwh = None
-    if soh_estimates:
-        for r in soh_estimates:
-            if r.estimated_kwh and factory_kwh and factory_kwh > 0 and float(r.estimated_kwh) <= float(factory_kwh) * 1.03:
-                latest_derived = round((float(r.estimated_kwh) / float(factory_kwh)) * 100, 1)
-                latest_derived_kwh = float(r.estimated_kwh)
-                break
+    if valid:
+        latest_derived = round((float(valid[0].estimated_kwh) / float(factory_kwh)) * 100, 1)
+        latest_derived_kwh = float(valid[0].estimated_kwh)
 
     return {
         "skoda_soh_pct": latest_bh.hv_battery_soh if latest_bh else None,
@@ -318,7 +329,7 @@ async def get_battery_health(
         "factory_capacity_kwh": factory_kwh,
         "derived_soh_pct": latest_derived,
         "derived_capacity_kwh": latest_derived_kwh if latest_derived else None,
-        "total_soh_estimates": len(soh_estimates),
+        "total_soh_estimates": len(soh_estimates) if soh_estimates else 0,
         "curve": curve_data,
     }
 

@@ -48,11 +48,14 @@ export function BatterySoHDashboard({ vehicleId }: { vehicleId: string }) {
   if (error) return <div className="p-4 text-red-500 text-center">{error}</div>;
   if (!data) return <div className="p-4 text-center">No data available</div>;
 
-  const chartData = data.curve.map(p => ({
-    date: new Date(p.date).toLocaleDateString(),
-    "SoH %": p.soh_pct != null ? parseFloat(p.soh_pct.toFixed(1)) : null,
-    "Capacity (kWh)": p.capacity_kwh != null ? parseFloat(p.capacity_kwh.toFixed(2)) : null,
-  }));
+  const chartData = data.curve.map(p => {
+    const dateObj = p.date.length === 7 ? new Date(`${p.date}-01`) : new Date(p.date);
+    return {
+      date: dateObj.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }),
+      "SoH %": p.soh_pct != null ? parseFloat(p.soh_pct.toFixed(1)) : null,
+      "Capacity (kWh)": p.capacity_kwh != null ? parseFloat(p.capacity_kwh.toFixed(2)) : null,
+    };
+  });
 
   return (
     <div className="space-y-6">
