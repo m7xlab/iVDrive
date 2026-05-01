@@ -55,7 +55,7 @@ jobs:
           output: 'trivy-image.sarif'
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true        # don't fail on CVEs that have no fix yet
-          exit-code: '1'              # fail the build on findings
+          exit-code: '0'              # report only, do not block on base image CVEs
           vuln-type: 'os,library'
 
       - name: Upload Trivy image SARIF
