@@ -304,10 +304,12 @@ async def get_battery_health(
 
     # Latest derived SoH (most recent valid estimate)
     latest_derived = None
+    latest_derived_kwh = None
     if soh_estimates:
         for r in soh_estimates:
             if r.estimated_kwh and factory_kwh and factory_kwh > 0 and float(r.estimated_kwh) <= float(factory_kwh) * 1.03:
                 latest_derived = round((float(r.estimated_kwh) / float(factory_kwh)) * 100, 1)
+                latest_derived_kwh = float(r.estimated_kwh)
                 break
 
     return {
@@ -315,7 +317,7 @@ async def get_battery_health(
         "skoda_degradation_pct": latest_bh.hv_battery_degradation_pct if latest_bh else None,
         "factory_capacity_kwh": factory_kwh,
         "derived_soh_pct": latest_derived,
-        "derived_capacity_kwh": soh_estimates[0].estimated_kwh if soh_estimates and latest_derived else None,
+        "derived_capacity_kwh": latest_derived_kwh if latest_derived else None,
         "total_soh_estimates": len(soh_estimates),
         "curve": curve_data,
     }
