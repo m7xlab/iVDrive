@@ -1094,7 +1094,7 @@ async def get_hvac_cost(
         "metrics": results,
         "reference_band": "10-20°C (no HVAC needed baseline)",
         "reference_kwh_100km": round(ref_avg, 1) if ref_avg else None,
-        "summary": f"HVAC cost: ~{round(results[0]['hvac_cost_kwh_100km'], 1) if results else 0} kWh/100km at {cold_ref_temp}°C" if results else "Not enough data to compute HVAC cost.",
+        "summary": f"HVAC cost: ~{round(results[0]['hvac_cost_kwh_100km'], 1) if results else 0} kWh/100km at {results[0]['band']}" if results else "Not enough data to compute HVAC cost.",
     }
 
 
