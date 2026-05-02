@@ -1052,14 +1052,20 @@ async def get_hvac_cost(
                 bucket[band_label][s_cat].append(eff)
                 break
 
-    # For each band where we have both cold and warm data, compute cost
     # Pick reference band = 10-20°C or 0-10°C as "no HVAC needed"
+    # Track which band(s) actually contributed data
     reference_bands = ["10-20°C", "0-10°C"]
     reference_effs: list[float] = []
+    active_reference_band: str | None = None
     for rb in reference_bands:
         for sc in ["city", "mixed", "highway"]:
-            reference_effs.extend(bucket[rb][sc])
+            effs = bucket[rb][sc]
+            if effs:
+                reference_effs.extend(effs)
+                if active_reference_band is None:
+                    active_reference_band = rb
     ref_avg = (sum(reference_effs) / len(reference_effs)) if reference_effs else None
+    reference_band_label = f"{active_reference_band} (no HVAC needed baseline)" if active_reference_band else "10-20°C (no HVAC needed baseline)"
 
 
     results: list[dict] = []
@@ -1092,7 +1098,7 @@ async def get_hvac_cost(
 
     return {
         "metrics": results,
-        "reference_band": "10-20°C (no HVAC needed baseline)",
+        "reference_band": reference_band_label,
         "reference_kwh_100km": round(ref_avg, 1) if ref_avg else None,
         "summary": f"HVAC cost: ~{round(results[0]['hvac_cost_kwh_100km'], 1) if results else 0} kWh/100km at {results[0]['band']}" if results else "Not enough data to compute HVAC cost.",
     }
