@@ -63,14 +63,14 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
       try {
         setLoading(true);
         const res = await api.getSpeedTempMatrix(vehicleId);
-        if (process.env.NODE_ENV === "development") {
-          console.error("[SpeedTempMatrix]", res);
+        console.error("[SpeedTempMatrix] Raw API response:", JSON.stringify(res, null, 2));
+        if (!res || (Array.isArray(res.grid) && res.grid.length === 0)) {
+          console.error("[SpeedTempMatrix] Empty response — no trip data available");
         }
         setData(res);
       } catch (err) {
-        if (process.env.NODE_ENV === "development") {
-          console.error("Failed to fetch speed-temp matrix", err);
-        }
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[SpeedTempMatrix] Fetch failed:", msg, "\nFull error:", err);
       } finally {
         setLoading(false);
       }
@@ -155,7 +155,7 @@ export function SpeedTempMatrixDashboard({ vehicleId }: { vehicleId: string }) {
           Average consumption (kWh/100km) by Speed Category × Temperature. Green = best efficiency.
         </p>
 
-        {/* Heatmap-style grid as colored bars */}
+        {/* Heatmap-style grid as colored bars — wrapped in ErrorBoundary to prevent blank panels */}
         <ChartErrorBoundary>
           <div className="h-80 w-full mb-6">
             <ResponsiveContainer width="100%" height="100%">
