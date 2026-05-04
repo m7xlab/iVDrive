@@ -1,4 +1,5 @@
 import asyncio
+from collections import OrderedDict
 from datetime import datetime, date, timedelta, timezone
 from uuid import UUID
 from typing import Any
@@ -1052,14 +1053,20 @@ async def get_hvac_cost(
                 bucket[band_label][s_cat].append(eff)
                 break
 
-    # For each band where we have both cold and warm data, compute cost
     # Pick reference band = 10-20°C or 0-10°C as "no HVAC needed"
+    # Track which band(s) actually contributed data
     reference_bands = ["10-20°C", "0-10°C"]
     reference_effs: list[float] = []
+    active_reference_band: str | None = None
     for rb in reference_bands:
         for sc in ["city", "mixed", "highway"]:
-            reference_effs.extend(bucket[rb][sc])
+            effs = bucket[rb][sc]
+            if effs:
+                reference_effs.extend(effs)
+                if active_reference_band is None:
+                    active_reference_band = rb
     ref_avg = (sum(reference_effs) / len(reference_effs)) if reference_effs else None
+    reference_band_label = f"{active_reference_band} (no HVAC needed baseline)" if active_reference_band else "10-20°C (no HVAC needed baseline)"
 
 
     results: list[dict] = []
@@ -1092,9 +1099,9 @@ async def get_hvac_cost(
 
     return {
         "metrics": results,
-        "reference_band": "10-20°C (no HVAC needed baseline)",
+        "reference_band": reference_band_label,
         "reference_kwh_100km": round(ref_avg, 1) if ref_avg else None,
-        "summary": f"HVAC cost: ~{round(results[0]['hvac_cost_kwh_100km'], 1) if results else 0} kWh/100km at {cold_ref_temp}°C" if results else "Not enough data to compute HVAC cost.",
+        "summary": f"HVAC cost: ~{round(results[0]['hvac_cost_kwh_100km'], 1) if results else 0} kWh/100km at {results[0]['band']}" if results else "Not enough data to compute HVAC cost.",
     }
 
 
@@ -1222,7 +1229,7 @@ async def get_charging_curve_integrals_v2(
     else:
         wasted_minutes = round(wasted_row.count * 5) if wasted_row and wasted_row.count else 0
 
-    total_energy = sum(b["energy_kwh"] for b in bracket_defs)
+    total_energy = round(sum(b["energy_kwh"] for b in bracket_defs), 2)
 
     # Compute overall session duration from earliest→latest timestamp across all brackets.
     # This is consistent with wasted_minutes (which also uses actual timestamps), unlike
@@ -1272,30 +1279,37 @@ async def get_charging_curve_integrals_v2(
 # =============================================================================
 # TASK 3: Elevation Penalty & Regen Efficiency
 # =============================================================================
-_elevation_cache: dict[str, float] = {}
+_elevation_cache: OrderedDict[str, float] = OrderedDict()
 
 
 async def _get_nearest_elevation(lat: float, lon: float, vehicle_id: UUID, db: AsyncSession) -> float | None:
     """Get elevation from vehicle_positions nearest to given lat/lon."""
     if lat is None or lon is None:
         return None
+    cache_key = f"{lat:.4f},{lon:.4f}"
+    if cache_key in _elevation_cache:
+        _elevation_cache.move_to_end(cache_key)
+        return _elevation_cache[cache_key]
     try:
-        res = await db.execute(
-            text("""
-                SELECT elevation_m FROM vehicle_positions
-                WHERE user_vehicle_id = :vid
-                  AND elevation_m IS NOT NULL
-                  AND latitude IS NOT NULL
-                  AND longitude IS NOT NULL
-                ORDER BY (
-                    (latitude - :lat)^2 + (longitude - :lon)^2
-                ) ASC
-                LIMIT 1
-            """),
-            {"vid": str(vehicle_id), "lat": lat, "lon": lon}
+        stmt = text(
+            "SELECT elevation_m FROM vehicle_positions "
+            "WHERE user_vehicle_id = :vid "
+            "  AND elevation_m IS NOT NULL "
+            "  AND latitude IS NOT NULL "
+            "  AND longitude IS NOT NULL "
+            "ORDER BY ("
+            "    (latitude - :lat)^2 + (longitude - :lon)^2"
+            ") ASC "
+            "LIMIT 1"
         )
+        res = await db.execute(stmt, {"vid": str(vehicle_id), "lat": lat, "lon": lon})
         row = res.first()
-        return float(row[0]) if row else None
+        elevation = float(row[0]) if row else None
+        if elevation is not None:
+            _elevation_cache[cache_key] = elevation
+            if len(_elevation_cache) > 500:
+                _elevation_cache.popitem(last=False)
+        return elevation
     except Exception:
         return None
 
@@ -2005,6 +2019,7 @@ async def get_predictive_soc(
         Trip.distance_km.is_not(None),
         Trip.distance_km > 5,
         Trip.kwh_consumed.is_not(None),
+        Trip.kwh_consumed > 0,
         Trip.avg_temp_celsius.is_not(None)
     ).order_by(Trip.start_date.desc()).limit(100)
     trips_res = await db.execute(trips_stmt)
@@ -2042,6 +2057,7 @@ async def get_predictive_soc(
             "predicted_arrival_soc_pct": round(current_soc, 1),
             "confidence_pct": 30,
             "message": "Not enough trip data for prediction.",
+            "consumption_by_temp": {},
             "consumption_data": []
         }
 
@@ -2081,7 +2097,7 @@ async def get_predictive_soc(
 
     cat_trips = len(cat_effs)
     confidence = min(95, 30 + cat_trips * 5)
-    arrival_soc = max(0.0, min(100.0, arrival_soc))
+    arrival_soc = max(0.0, arrival_soc)  # Clamp floor only; upper bound enforced by caller
 
     return {
         "current_soc_pct": round(current_soc, 1),
