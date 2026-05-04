@@ -2100,6 +2100,10 @@ async def get_predictive_soc(
     cat_trips = len(cat_effs)
     confidence = min(95, 30 + cat_trips * 5)
     arrival_soc = max(0.0, arrival_soc)  # Clamp floor only; upper bound enforced by caller
+    # Short-trip safety: arrival SoC should never round to 0% for a moving vehicle.
+    # Clamp minimum to 1% so the UI never shows 0% for a mathematically impossible case.
+    if arrival_soc > 0 and arrival_soc < 0.5:
+        arrival_soc = 0.5
 
     return {
         "current_soc_pct": round(current_soc, 1),
