@@ -47,13 +47,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Download Trivy vulnerability database
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          version: '0.36.0'
-          update-cache: true
-          cache-dir: .trivy-cache
-
       - name: Run Trivy on the image (SARIF)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -64,6 +57,8 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           vuln-type: 'os,library'
+          limit-severities-for-sarif: 'true'
+          cache: 'true'
           cache-dir: .trivy-cache
 
       - name: Upload Trivy image SARIF
@@ -83,6 +78,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '0'
           vuln-type: 'os,library'
+          cache: 'true'
           cache-dir: .trivy-cache
 
   # ─────────────────────────────────────────────
@@ -104,6 +100,8 @@ jobs:
           output: 'trivy-fs.sarif'
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
+          limit-severities-for-sarif: 'true'
+          cache: 'true'
           # Scan deps, IaC, and secrets in one pass
           scanners: 'vuln,misconfig,secret'
           exit-code: '1'
@@ -187,4 +185,4 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: GITLEAKS_LICENSE for org accounts
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
