@@ -6,6 +6,7 @@
 - security-scan.yml: Trivy DB pre-download step; exit-code changed to 0 (report-only, doesn't block merges); SEMGREP_APP_TOKEN removed (free CI mode with --disable-version-check).
 
 ### Fixed
+- security-scan.yml: Update Trivy action from v0.36.0 to v0.49.1, remove separate DB download step (v0.49.1 handles DB init automatically). Fixes "Download Trivy vulnerability database" step failure blocking all workflow runs.
 - ChargingEconomicsDashboard: Remove duplicate Recent Sessions Table block (copy-paste error — same table rendered twice).
 - CarOverviewDashboard: Switch `Promise.all` → `Promise.allSettled` — if 1-2 of 15 parallel API requests fail, dashboard still renders partial data.
 - StatisticsShell: Guard ArrowLeft/ArrowRight keyboard navigation against `input`/`textarea` elements (accessibility).
