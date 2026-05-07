@@ -284,28 +284,55 @@ export function CarOverviewDashboard({
           api.getAnalyticsPulse(vehicleId),
           api.getAnalyticsEfficiency(vehicleId),
         ]);
-        const [b, r, c, bands, range100, wltp, eff, lStep, rStep, oTemp, bTemp, elecCons, vd, pulseData, winterEff] = results.map((res) => res.status === "fulfilled" ? res.value : null);
-        setBattery(b ?? []);
-        setRange(r ?? []);
-        setCharging(c ?? []);
-        setStateBands(bands ?? []);
-        setRangeAt100(range100 ?? []);
-        setElectricConsumption(elecCons ?? []);
-        setWltpKm(wltp?.wltp_range_km ?? null);
-        setEfficiencyData(eff ?? []);
-        setLevelsStep(lStep ?? []);
-        setRangesStep(rStep ?? []);
-        setOutsideTemp(oTemp ?? []);
-        setBatteryTemp(bTemp ?? []);
-        setVampireDrain(vd ?? null);
-        setPulse(pulseData ?? null);
-        setWinterEfficiency(winterEff ?? []);
+        const [b, r, c, bands, range100, wltp, eff, lStep, rStep, oTemp, bTemp, elecCons, vd, pulseData, winterEff] = results.map((res) =>
+          res.status === "fulfilled" ? res.value : null
+        );
+        // Promise.allSettled never throws — check rejected results for AbortError.
+        const anyAborted = results.some(
+          (r) => r.status === "rejected" && r.reason instanceof Error && r.reason.name === "AbortError"
+        );
+        const allRejected = results.every((r) => r.status === "rejected");
+        if (allRejected && !anyAborted) {
+          // All promises failed for non-abort reasons — reset all 15 state vars.
+          setBattery([]);
+          setRange([]);
+          setCharging([]);
+          setStateBands([]);
+          setRangeAt100([]);
+          setElectricConsumption([]);
+          setWltpKm(null);
+          setEfficiencyData([]);
+          setLevelsStep([]);
+          setRangesStep([]);
+          setOutsideTemp([]);
+          setBatteryTemp([]);
+          setVampireDrain(null);
+          setPulse(null);
+          setWinterEfficiency([]);
+        } else {
+          setBattery(b ?? []);
+          setRange(r ?? []);
+          setCharging(c ?? []);
+          setStateBands(bands ?? []);
+          setRangeAt100(range100 ?? []);
+          setElectricConsumption(elecCons ?? []);
+          setWltpKm(wltp?.wltp_range_km ?? null);
+          setEfficiencyData(eff ?? []);
+          setLevelsStep(lStep ?? []);
+          setRangesStep(rStep ?? []);
+          setOutsideTemp(oTemp ?? []);
+          setBatteryTemp(bTemp ?? []);
+          setVampireDrain(vd ?? null);
+          setPulse(pulseData ?? null);
+          setWinterEfficiency(winterEff ?? []);
+        }
       } finally {
         clearTimeout(timeoutId);
         setLoading(false);
       }
     } catch (err) {
-      // AbortError is expected when component unmounts or poll ticks — not a real error
+      // AbortError is expected when component unmounts or poll ticks — not a real error.
+      // With Promise.allSettled the outer catch only fires for programmer errors, not rejected promises.
       const isAbort = err instanceof Error && err.name === "AbortError";
       if (!isAbort) {
         console.error("CarOverview Fetch Error:", err);
@@ -323,6 +350,9 @@ export function CarOverviewDashboard({
         setRangesStep([]);
         setOutsideTemp([]);
         setBatteryTemp([]);
+        setVampireDrain(null);
+        setPulse(null);
+        setWinterEfficiency([]);
       }
     }
   }, [vehicleId, fromISO, toISOVal]);
