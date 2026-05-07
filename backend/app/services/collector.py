@@ -822,11 +822,9 @@ class DataCollector:
                 # --- BatteryHealth: only write when real data is available from status API ---
                 # The Skoda API provides SOC and estimated range during charging.
                 # Other fields (cell voltages, temperatures) are not exposed by the API.
-                if (
-                    status_resp and status_resp.overall
-                    and status_resp.overall.battery
-                ):
-                    batt = status_resp.overall.battery
+                _overall_batt = getattr(status_resp.overall, 'battery', None) if status_resp and status_resp.overall else None
+                if _overall_batt is not None:
+                    batt = _overall_batt
                     soc = getattr(batt, "state_of_charge_in_percent", None)
                     if soc is not None:
                         session.add(BatteryHealth(
@@ -953,8 +951,9 @@ class DataCollector:
 
                 # Extract battery temperature from status endpoint
                 battery_temp = None
-                if status_resp and status_resp.overall and status_resp.overall.battery:
-                    battery_temp = getattr(status_resp.overall.battery, "temperature", None)
+                _overall_batt2 = getattr(status_resp.overall, 'battery', None) if status_resp and status_resp.overall else None
+                if _overall_batt2 is not None:
+                    battery_temp = getattr(_overall_batt2, "temperature", None)
 
                 if battery_temp is not None:
                     await _update_or_insert_duration_state(
