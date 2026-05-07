@@ -5,6 +5,9 @@
 - HVACCostCard: Wrap `representative_temp_celsius` with `Number()` before `toFixed()` — defensive fix against string concatenation (e.g. "5"+"10"="510°C") if backend returns unexpected type.
 ## [v1.0.23] - 2026-05-04
 ### Added
+## [Unreleased] - 2026-05-07
+### Fixed
+- collector.py: Replace `status_resp.overall.battery` attribute access with `getattr(..., 'battery', None)` — `VehicleStatusOverall` pydantic model has no `battery` field, causing `AttributeError` on every vehicle collection and blocking ALL data ingestion since ~May 5. Also fixed duplicate reference at battery temperature extraction (line ~956).
 - BatterySoHDashboard: Battery SoH tab with derived SoH from charging sessions + Skoda BMS comparison + degradation curve (via `battery-health` endpoint).
 - security-scan.yml: Trivy DB pre-download step; exit-code changed to 0 (report-only, doesn't block merges); SEMGREP_APP_TOKEN removed (free CI mode with --disable-version-check).
 
